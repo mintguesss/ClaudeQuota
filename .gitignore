@@ -1,0 +1,9 @@
+# 個人狀態：視窗位置、顯示模式、圖示樣式偏好
+widget_state.json
+
+# Claude 官方 app icon。這是 Anthropic 的商標圖形，從桌面版的 MSIX 套件複製出來的，
+# 不該跟著程式碼一起散布。程式在缺檔時會用 _extract_logo() 自動重新取得。
+claude_logo.png
+
+__pycache__/
+*.py[cod]
