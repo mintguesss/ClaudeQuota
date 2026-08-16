@@ -165,6 +165,282 @@ def enable_dpi_awareness() -> float:
         return 1.0
 
 
+class RECT(ctypes.Structure):
+    _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", RECT),
+                ("rcWork", RECT), ("dwFlags", ctypes.c_ulong)]
+
+
+def taskbar_slot(sw: int, sh: int, w: int, h: int) -> tuple[int, int]:
+    """橫條的預設位置：工作列左側、垂直置中。
+
+    量不到工作列（例如自動隱藏）就退回螢幕左下角。
+    """
+    try:
+        u = _u32()
+        tray = u.FindWindowW("Shell_TrayWnd", None)
+        bar = RECT()
+        if tray and u.GetWindowRect(tray, ctypes.byref(bar)) and bar.bottom - bar.top >= h:
+            return 35, bar.top + (bar.bottom - bar.top - h) // 2
+    except Exception:
+        pass
+    return 35, max(0, sh - h - 14)
+
+
+# ────────────────── 讓浮動視窗待得住（但該讓的時候讓開） ──────────────────
+#
+# 無邊框置頂視窗在 Windows 上有三種各自獨立的消失方式，要三種解法：
+#   1. Win+D／「顯示桌面」會收掉所有出現在工作列上的視窗
+#      → 標成 tool window 就不在那份名單裡（桌面元件類的程式都這樣做）
+#   2. 切到別的虛擬桌面時，視窗只留在它被建立的那個桌面
+#      → 發現桌面換了就重新 show 一次，視窗會被指派到目前的桌面
+#   3. 沉到工作列後面——按 Win+D 時真正發生的就是這件事
+#      實測：Win+D 之後視窗的 visible／rect／DWM cloak 全都沒變，變的只有 z 序。
+#      橫條的預設位置就在工作列的矩形裡，而工作列自己也是 topmost 視窗，
+#      Win+D 會把桌面和工作列拉到最上面，橫條就沉到工作列後面看不到了。
+#      同一個 topmost 層裡誰在上面沒有辦法固定，只能每趟都重新宣告一次置頂。
+#      → 唯一例外是全螢幕的遊戲或影片：那種時候不搶，直接收起來讓開（見 fullscreen_monitor）
+# 這些 tkinter 都做不到，只能直接動 Win32 API。
+
+GWL_EXSTYLE = -20
+WS_EX_TOOLWINDOW = 0x00000080
+HWND_TOPMOST = -1
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOACTIVATE = 0x0010
+SW_HIDE = 0
+SW_SHOWNOACTIVATE = 4  # 顯示但不搶焦點——不能打斷使用者正在打字的視窗
+MONITOR_DEFAULTTONEAREST = 2
+
+# 看門狗巡邏間隔。這同時也是 Win+D 之後橫條「消失」的最長時間，所以要短；
+# 一趟只有幾個很便宜的 API 呼叫，250ms 的成本可以忽略。
+GUARD_MS = 250
+
+# 這些滿版的殼層視窗不算「全螢幕程式」。少了這幾個，按 Win+D 回到桌面
+# 或叫出工作檢視就會被誤判成在玩遊戲。
+SHELL_CLASSES = {
+    "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
+    "Windows.UI.Core.CoreWindow", "XamlExplorerHostIslandWindow",
+    "ForegroundStaging", "MultitaskingViewFrame",
+}
+
+_u32_ready = False
+
+
+def _u32():
+    """user32，並且把會碰到視窗 handle 的函式宣告成 c_void_p。
+
+    ctypes 預設把回傳值當 c_int，64 位元下 handle 會被截斷成垃圾值。
+    """
+    global _u32_ready
+    u = ctypes.windll.user32
+    if not _u32_ready:
+        for name in ("GetParent", "GetForegroundWindow", "FindWindowW", "MonitorFromWindow"):
+            getattr(u, name).restype = ctypes.c_void_p
+        u.GetParent.argtypes = [ctypes.c_void_p]
+        u.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+        u.IsWindowVisible.argtypes = [ctypes.c_void_p]
+        u.IsIconic.argtypes = [ctypes.c_void_p]
+        u.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        u.GetWindowRect.argtypes = [ctypes.c_void_p, ctypes.POINTER(RECT)]
+        u.GetClassNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
+        u.MonitorFromWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        u.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
+        u.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        _u32_ready = True
+    return u
+
+
+EVENT_SYSTEM_FOREGROUND = 0x0003
+EVENT_SYSTEM_MINIMIZESTART = 0x0016
+EVENT_SYSTEM_MINIMIZEEND = 0x0017
+WINEVENT_OUTOFCONTEXT = 0x0000
+WINEVENT_SKIPOWNPROCESS = 0x0002
+
+WinEventProc = ctypes.WINFUNCTYPE(
+    None, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p,
+    ctypes.c_long, ctypes.c_long, ctypes.c_uint, ctypes.c_uint)
+
+
+def hook_shell_events(callback):
+    """前景視窗改變／視窗最小化時立刻回呼。
+
+    光靠看門狗定期巡是「事後補救」，兩趟之間的空窗使用者看得見——按 Win+D
+    會閃一下就是這個。這些事件是 z 序被動的當下就送到，搶回置頂快得多。
+
+    回呼是在 Tk 的訊息迴圈裡被叫的，所以裡面只能碰 Win32，絕對不要碰 Tk。
+    回傳值一定要留著：proc 被回收掉，hook 就會打到一個不存在的位址。
+    """
+    try:
+        u = _u32()
+        u.SetWinEventHook.restype = ctypes.c_void_p
+        u.SetWinEventHook.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p,
+                                      WinEventProc, ctypes.c_uint, ctypes.c_uint,
+                                      ctypes.c_uint]
+        proc = WinEventProc(lambda *_: callback())
+        hooks = [
+            u.SetWinEventHook(ev, ev, None, proc, 0, 0,
+                              WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS)
+            for ev in (EVENT_SYSTEM_FOREGROUND,
+                       EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND)
+        ]
+        return proc, hooks
+    except Exception:
+        return None  # 掛不上就只剩看門狗，會閃但不會壞
+
+
+def fullscreen_monitor() -> int | None:
+    """前景如果是佔滿整個螢幕的程式（遊戲、全螢幕影片、簡報），回傳它所在的螢幕。
+
+    判準就是「視窗矩形蓋滿所在螢幕」——獨佔全螢幕的遊戲和瀏覽器的 F11／YouTube
+    全螢幕都符合，一般的最大化視窗因為讓出了工作列的高度所以不符合。
+    只回傳螢幕而不是 True／False，是為了多螢幕：在別的螢幕玩遊戲時，
+    停在這一螢幕的橫條沒有理由跟著消失。
+    """
+    try:
+        u = _u32()
+        fg = u.GetForegroundWindow()
+        if not fg:
+            return None
+        cls = ctypes.create_unicode_buffer(96)
+        u.GetClassNameW(fg, cls, 96)
+        if cls.value in SHELL_CLASSES:
+            return None
+
+        win = RECT()
+        if not u.GetWindowRect(fg, ctypes.byref(win)):
+            return None
+        mon = u.MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST)
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(MONITORINFO)
+        if not mon or not u.GetMonitorInfoW(mon, ctypes.byref(info)):
+            return None
+        m = info.rcMonitor
+        covers = (win.left <= m.left and win.top <= m.top
+                  and win.right >= m.right and win.bottom >= m.bottom)
+        return mon if covers else None
+    except Exception:
+        return None
+
+
+def window_handle(win: tk.Misc) -> int | None:
+    """取得 tkinter 視窗真正的 HWND。
+
+    winfo_id() 給的是 Tk 自己那層子視窗，真正的 top-level 是它的父視窗。
+    """
+    try:
+        win.update_idletasks()
+        wid = win.winfo_id()
+    except tk.TclError:
+        return None
+    try:
+        return _u32().GetParent(wid) or wid
+    except Exception:
+        return wid
+
+
+def make_tool_window(hwnd: int | None) -> None:
+    """標成 tool window，讓「顯示桌面」收不到它；順便從 Alt+Tab 清單消失。"""
+    if not hwnd:
+        return
+    try:
+        u = _u32()
+        get = getattr(u, "GetWindowLongPtrW", u.GetWindowLongW)
+        put = getattr(u, "SetWindowLongPtrW", u.SetWindowLongW)
+        get.restype = put.restype = ctypes.c_ssize_t
+        get.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        put.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
+        ex = get(hwnd, GWL_EXSTYLE)
+        if not ex & WS_EX_TOOLWINDOW:
+            put(hwnd, GWL_EXSTYLE, ex | WS_EX_TOOLWINDOW)
+    except Exception:
+        pass
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [("d1", ctypes.c_ulong), ("d2", ctypes.c_ushort),
+                ("d3", ctypes.c_ushort), ("d4", ctypes.c_ubyte * 8)]
+
+
+class VirtualDesktops:
+    """IVirtualDesktopManager 的最小 ctypes 綁定。
+
+    用的是公開介面（shobjidl_core.h 裡那個），不是網路上常見的 IVirtualDesktopManagerInternal
+    ——後者的 IID 每個 Windows 版本都會換，綁上去等著下次更新壞掉。
+
+    只拿來問「前景視窗在哪個桌面」。問我們自己的視窗是問不到的：tool window
+    不歸虛擬桌面管理員管，會直接回 TYPE_E_ELEMENTNOTFOUND。
+    """
+
+    CLSID = "{AA509086-5CA9-4C25-8F95-589D3C07B48A}"
+    IID = "{A5CD92FF-29BE-454C-8D04-D82879FB3F1B}"
+
+    def __init__(self):
+        ole = ctypes.windll.ole32
+        ole.CoInitializeEx(None, 0x2)  # STA。已經初始化過會回 RPC_E_CHANGED_MODE，不影響後面
+        clsid, iid = _GUID(), _GUID()
+        if ole.CLSIDFromString(self.CLSID, ctypes.byref(clsid)) != 0 or \
+                ole.IIDFromString(self.IID, ctypes.byref(iid)) != 0:
+            raise OSError("GUID 解析失敗")
+        self._p = ctypes.c_void_p()
+        hr = ole.CoCreateInstance(ctypes.byref(clsid), None, 1,  # CLSCTX_INPROC_SERVER
+                                  ctypes.byref(iid), ctypes.byref(self._p))
+        if hr != 0 or not self._p:
+            raise OSError(f"CoCreateInstance 失敗 0x{hr & 0xffffffff:08x}")
+        self._vt = ctypes.cast(
+            self._p, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+
+    def _m(self, slot: int, *argtypes):
+        """取 vtable 第 slot 個方法。前三格固定是 IUnknown 的三個。"""
+        return ctypes.WINFUNCTYPE(ctypes.HRESULT, ctypes.c_void_p, *argtypes)(self._vt[slot])
+
+    def on_current(self, hwnd: int) -> bool:
+        out = ctypes.c_int(0)
+        self._m(3, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int))(
+            self._p, hwnd, ctypes.byref(out))
+        return bool(out.value)
+
+    def desktop_of(self, hwnd: int) -> _GUID:
+        gid = _GUID()
+        self._m(4, ctypes.c_void_p, ctypes.POINTER(_GUID))(self._p, hwnd, ctypes.byref(gid))
+        return gid
+
+    def move(self, hwnd: int, gid: _GUID) -> None:
+        self._m(5, ctypes.c_void_p, ctypes.POINTER(_GUID))(self._p, hwnd, ctypes.byref(gid))
+
+
+_vdm: VirtualDesktops | None = None
+_vdm_tried = False
+
+
+def current_desktop_id() -> bytes | None:
+    """目前這個虛擬桌面的 GUID。切桌面時這個值會變，用來當作切換的訊號。
+
+    沒有 API 能直接問「現在在哪個桌面」，但前景視窗一定在目前的桌面上，
+    問它就等於問到了。問不到（例如前景是桌面本身）就回 None，當作「不知道」——
+    比猜錯好，猜錯會讓視窗每半秒閃一次。
+    """
+    global _vdm, _vdm_tried
+    if not _vdm_tried:
+        _vdm_tried = True
+        try:
+            _vdm = VirtualDesktops()
+        except Exception:
+            _vdm = None  # 沒有這個介面就放棄這一項，其他保護照常
+    if _vdm is None:
+        return None
+    try:
+        fg = _u32().GetForegroundWindow()
+        return bytes(_vdm.desktop_of(fg)) if fg else None
+    except OSError:
+        return None
+
+
 def load_state() -> dict:
     # utf-8-sig：手動編輯過的檔案常帶 BOM（PowerShell 的 Out-File -Encoding utf8 就會加），
     # 用 utf-8 讀會直接拋 JSONDecodeError，設定就整包靜靜失憶了。
@@ -520,7 +796,12 @@ class CardPainter(Painter):
             if q.week_used is not None:
                 self._row(118, "每週額度", q.week_used, GRAD_WEEK, WEEK_ACCENT)
             if q.live:
+                # 更新節奏會自我收斂、也可能被限流，每次間隔都不同，
+                # 所以直接把「上次更新多久了」秒數寫出來
+                age = quota_source.seconds_since_fetch()
                 foot = "即時官方數字"
+                if age is not None:
+                    foot += f" · {age:.0f} 秒前更新"
             else:
                 age = "剛剛更新" if q.age_min < 1.5 else f"{q.age_min:.0f} 分鐘前取樣"
                 foot = f"桌面版快取 · {age} · {quota_source.api_status()}"
@@ -593,6 +874,7 @@ class FloatWindow:
     """
 
     STATE = ""
+    SHOWS_AGE = False  # 畫面上有沒有「N 秒前更新」這種每秒會變的東西
 
     def __init__(self, root: tk.Tk, dpi: float, painter: Painter, default_pos):
         self.root = root
@@ -634,6 +916,73 @@ class FloatWindow:
         self.visible = True
         self._last = None
 
+        self._hwnd: int | None = None
+        self._suspended = False  # 被全螢幕程式擠掉，不是使用者的意思
+        make_tool_window(self.hwnd)
+
+    # ── 待得住 ──
+    @property
+    def hwnd(self) -> int | None:
+        if self._hwnd is None:
+            self._hwnd = window_handle(self.win)
+        return self._hwnd
+
+    def _raise(self, hwnd: int):
+        _u32().SetWindowPos(hwnd, ctypes.c_void_p(HWND_TOPMOST), 0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+
+    def lift_now(self):
+        """事件回呼專用：只動 z 序。
+
+        這是在 Windows 的訊息回呼裡跑的，碰 Tk 會有重入風險，所以只讀
+        已經算好的欄位、只叫 Win32。該不該讓開（全螢幕）交給看門狗判斷。
+        """
+        if self.visible and not self._suspended and self._hwnd:
+            self._raise(self._hwnd)
+
+    def suspend(self):
+        """暫時讓開（全螢幕程式當前）。不動 visible——那記的是使用者的意思。"""
+        if self.visible and not self._suspended:
+            self._suspended = True
+            self.win.withdraw()
+
+    def resume(self):
+        if self._suspended:
+            self._suspended = False
+            if self.visible:
+                self.win.deiconify()
+                if self.hwnd:  # 重新顯示的視窗不保證回到最上面
+                    self._raise(self.hwnd)
+
+    def keep_alive(self, desk_changed: bool = False, busy_mon: int | None = None):
+        """看門狗巡一趟：該讓的讓開，其餘一律救回來。
+
+        只管「應該看得見」的視窗——使用者自己按 ✕ 收起來的不會被硬拉回來。
+        """
+        hwnd = self.hwnd
+        if not hwnd:
+            return
+        u = _u32()
+        # 同一個螢幕上有全螢幕程式就收起來；等它結束（或切到別的視窗）再自己回來
+        if busy_mon and u.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) == busy_mon:
+            self.suspend()
+            return
+        self.resume()
+        if not self.visible:
+            return
+
+        if u.IsIconic(hwnd) or not u.IsWindowVisible(hwnd):
+            u.ShowWindow(hwnd, SW_SHOWNOACTIVATE)  # 真的被收掉了（少見，但便宜）
+        elif desk_changed:
+            # 剛切過虛擬桌面。視窗是在 show 的當下被指派到某個桌面的，
+            # 所以關掉再開一次就會跟著過來——沒有 API 能直接搬 tool window。
+            u.ShowWindow(hwnd, SW_HIDE)
+            u.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+
+        # 每趟都重新宣告置頂。這是 Win+D 之後救得回來的唯一手段：視窗沒有被隱藏，
+        # 只是沉到同樣是 topmost 的工作列後面。已經在最上面時這個呼叫等於沒做事。
+        self._raise(hwnd)
+
     # ── 位置 ──
     def _default(self) -> tuple[int, int]:
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
@@ -654,6 +1003,7 @@ class FloatWindow:
 
     def toggle(self):
         self.visible = not self.visible
+        self._suspended = False  # 使用者的指令蓋過看門狗的判斷
         self.win.deiconify() if self.visible else self.win.withdraw()
 
     def show(self):
@@ -720,8 +1070,13 @@ class FloatWindow:
         left = None
         if q and q.resets_at:
             left = int((q.resets_at - datetime.now(timezone.utc)).total_seconds() // 60)
+        # 「N 秒前更新」每秒都會變，但只有卡片會顯示它，橫條不需要跟著重畫
+        age = None
+        if q is not None and q.live and self.SHOWS_AGE:
+            secs = quota_source.seconds_since_fetch()
+            age = None if secs is None else int(secs)
         return (
-            self._hot, self._note,
+            self._hot, self._note, age,
             None if q is None else (q.percent_used, q.week_used, q.resets_exact,
                                     q.stale, q.live, left),
         )
@@ -742,7 +1097,8 @@ class FloatWindow:
 class QuotaWindow(FloatWindow):
     """完整卡片。右上角四顆按鈕：⚡ 起算 ／ ↻ 重讀 ／ ─ 縮成橫條 ／ ✕ 收起。"""
 
-    STATE = ""  # 沿用既有的 x / y 鍵，舊設定不會失效
+    STATE = ""       # 沿用既有的 x / y 鍵，舊設定不會失效
+    SHOWS_AGE = True  # 頁尾有「N 秒前更新」，要每秒重畫
 
     def __init__(self, root, dpi, on_refresh, on_poke, on_minimize):
         self.on_refresh = on_refresh
@@ -768,16 +1124,15 @@ class QuotaWindow(FloatWindow):
 class MiniWindow(FloatWindow):
     """卡片縮小後的形態。點一下展開回卡片，拖曳可移動。
 
-    跟卡片共用同一組 x / y（STATE 都是空字串），所以縮放時左上角不動，
-    看起來就是同一個東西在伸縮，而不是兩個各自為政的視窗。
+    位置**跟卡片分開記**（STATE 前綴 mini_）：橫條適合停在工作列旁邊常駐，
+    卡片則適合放在桌面上看，兩者各有各的好位置。按縮小就直接回到橫條自己的位置。
     """
 
-    STATE = ""
+    STATE = "mini_"
 
     def __init__(self, root, dpi, on_click):
         self.on_click = on_click
-        super().__init__(root, dpi, MiniPainter(dpi),
-                         lambda sw, sh, w, h: (0, 0))
+        super().__init__(root, dpi, MiniPainter(dpi), taskbar_slot)
 
     def _click(self, e):
         self._start_drag(e)
@@ -803,9 +1158,12 @@ class App:
         self._poking = False
         self._last_poke: datetime | None = None
         self._tray_pct = object()  # 讓第一次一定會設圖示
-        self._tick: str | None = None  # 目前排定的更新排程
+        self._tick: str | None = None    # 目前排定的更新排程
+        self._ticker: str | None = None  # 每秒跳動的「N 秒前」計時器
         self._api_busy = False
         self._api_next = 0.0  # 下次可以打 API 的時間
+        self._desk: bytes | None = None  # 上一趟看到的虛擬桌面 GUID
+        self._hook = None  # 殼層事件 hook，要留著參照不然會被回收
 
         st = load_state()
         self.auto_poke = bool(st.get("auto_poke", True))
@@ -820,22 +1178,15 @@ class App:
             self.window.hide()
 
     # ── 卡片 ↔ 橫條 ↔ 收起 ──
-    def _place(self, src, dst):
-        """把 dst 擺到 src 現在的左上角，看起來就是同一個東西在伸縮。"""
-        x, y = dst._clamp(src.win.winfo_x(), src.win.winfo_y())
-        dst.win.geometry(f"+{x}+{y}")
-        dst._save_pos(x, y)
-
+    # 兩者各記各的位置：橫條停在工作列旁邊常駐，卡片放在桌面上看。
+    # 切換時都回到自己的位置，不會互相把對方拖走。
     def minimize(self):
-        if self.window.visible:
-            self._place(self.window, self.mini)
         self.window.hide()
         self.mini.show()
         self.minimized = True
         save_state(minimized=True, hidden=False)
 
     def expand(self):
-        self._place(self.mini, self.window)
         self.mini.hide()
         self.window.show()
         self.minimized = False
@@ -928,6 +1279,42 @@ class App:
             return
         self.request_poke(auto=True)
 
+    def _lift_all(self):
+        """殼層事件一來就立刻搶回置頂，不等下一趟看門狗。"""
+        for w in (self.window, self.mini):
+            w.lift_now()
+
+    def _guard(self):
+        """定期巡視兩個浮動視窗，確保它們還在該在的地方。
+
+        虛擬桌面只在這裡問一次就好——兩個視窗面對的是同一個桌面。
+        """
+        desk = current_desktop_id()
+        changed = desk is not None and self._desk is not None and desk != self._desk
+        if desk is not None:
+            self._desk = desk
+        busy = fullscreen_monitor()
+        for w in (self.window, self.mini):
+            w.keep_alive(changed, busy)
+        self.root.after(GUARD_MS, self._guard)
+
+    def _start_ticker(self):
+        """每秒更新卡片上的「N 秒前更新」。
+
+        只在卡片看得見時才跑，而且靠 _signature() 擋掉沒必要的重畫——
+        秒數沒跳就不會真的去重繪那 34ms。
+        """
+        if self._ticker is not None:
+            return
+
+        def tick():
+            self._ticker = None
+            if self.window.visible:
+                self.window.redraw()
+            self._ticker = self.root.after(1000, tick)
+
+        self._ticker = self.root.after(1000, tick)
+
     def refresh(self, *_, force: bool = False):
         # 畫面每 REFRESH_SEC 重畫是為了倒數；網路照 quota_source 自己收斂出來的節奏
         now = time.time()
@@ -955,7 +1342,13 @@ class App:
                 stale = "（資料已過期）" if q.stale else ""
                 self.icon.title = f"Claude 已用 {q.percent_used:.0f}%{week}{stale}"
 
+        # 網路瞬斷（URLError 之類）不會靜音，但預設要等一整個間隔才重試，
+        # 等於為了一次閃斷退回 5 分鐘快取兩分鐘。這種情況提早重試。
+        if q is not None and not q.live and not quota_source.is_muted():
+            self._api_next = min(self._api_next, time.time() + 20)
+
         self._maybe_auto_poke(q)
+        self._start_ticker()
         # 手動重整也會走到這裡，不取消舊的排程就會養出好幾條並行的更新迴圈
         if self._tick is not None:
             self.root.after_cancel(self._tick)
@@ -1003,6 +1396,9 @@ class App:
         # 圖示註冊之後才有對應的登錄檔項目可以設定，所以延後一點再提升
         self.root.after(4000, promote_tray_icon)
         self.refresh()
+        self._guard()
+        # hook 的事件是靠執行緒的訊息佇列送的，而 mainloop 就在抽這個佇列
+        self._hook = hook_shell_events(self._lift_all)
         self.root.mainloop()
 
     def quit(self, *_):

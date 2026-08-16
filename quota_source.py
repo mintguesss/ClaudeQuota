@@ -234,6 +234,25 @@ def refresh_api(force: bool = False) -> Optional[Quota]:
     return q
 
 
+def is_muted() -> bool:
+    """是不是被伺服器擋著（429／401／HTTP 錯誤）而暫停中。
+
+    網路瞬斷（URLError 之類）不算——那種沒有靜音，可以馬上重試。
+    """
+    return time.time() < _api_muted_until
+
+
+def seconds_since_fetch() -> Optional[float]:
+    """距離上一次成功取得官方數字過了幾秒。沒成功過就回 None。
+
+    這個端點的節奏會自我收斂、又可能被限流，每次間隔都不一樣，
+    所以畫面要直接把「上次更新是多久以前」講出來，不然看不出數字新不新。
+    """
+    with _api_lock:
+        ts, q = _api_cache
+    return None if q is None else max(0.0, time.time() - ts)
+
+
 def seconds_until_allowed() -> float:
     """還要等多久才可以再問一次 API。0 代表現在就可以。
 
