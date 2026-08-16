@@ -1,5 +1,7 @@
 # ClaudeQuota
 
+<img src="docs/screenshot.png" alt="置頂卡片與縮小後的迷你橫條" width="640">
+
 ClaudeQuota 是一個 Windows 系統列工具，顯示 Claude 訂閱的 5 小時與每週額度用量。
 
 ## 功能
