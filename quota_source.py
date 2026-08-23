@@ -21,7 +21,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -232,14 +232,6 @@ def refresh_api(force: bool = False) -> Optional[Quota]:
         with _api_lock:
             _api_cache = (time.time(), q)
     return q
-
-
-def is_muted() -> bool:
-    """是不是被伺服器擋著（429／401／HTTP 錯誤）而暫停中。
-
-    網路瞬斷（URLError 之類）不算——那種沒有靜音，可以馬上重試。
-    """
-    return time.time() < _api_muted_until
 
 
 def seconds_since_fetch() -> Optional[float]:
@@ -544,13 +536,41 @@ def _to_quota(parsed: dict) -> Quota:
     )
 
 
+def _known_reset() -> Optional[datetime]:
+    """API 說過的 5 小時重置時刻，只要還沒到就仍然成立。
+
+    重置時刻跟百分比不一樣，它在同一個視窗內是固定的，不會因為資料放久了就失準。
+    而且只要它還在未來，就一定還是「現在這個視窗」的重置時間——新視窗要等舊的
+    結束之後才會開始。所以這個值可以放心跨過 API 快取的有效期繼續用。
+    """
+    with _api_lock:
+        _ts, q = _api_cache
+    if q is None or q.resets_at is None:
+        return None
+    return q.resets_at if q.resets_at > datetime.now(timezone.utc) else None
+
+
 def get_quota() -> Optional[Quota]:
     """對外唯一入口，不碰網路。
 
     優先用已抓到的即時 API 結果；沒有就退回桌面版快取。兩個都沒有就 None，
     交給 UI 明說讀不到——絕不推估。網路更新請由外面開執行緒呼叫 refresh_api()。
     """
-    return cached_api_quota() or read_desktop_quota()
+    q = cached_api_quota()
+    if q is not None:
+        return q
+
+    d = read_desktop_quota()
+    if d is None:
+        return None
+    # 退回桌面版時，百分比用它的（取樣比較新），但重置時刻改用 API 說過的。
+    # 桌面版只能從取樣回推，而且結構上只拿得到「不晚於」的上限（見 _window_reset_time），
+    # 實測過差到 2 小時以上（官方 16:29，回推 18:40）。官方給的精確值只要還沒到期
+    # 就仍然正確，沒有理由拿它去換一個已知偏晚的估計值。
+    known = _known_reset()
+    if known is not None and (d.resets_at is None or d.resets_at > known):
+        d = replace(d, resets_at=known, resets_exact=True)
+    return d
 
 
 if __name__ == "__main__":

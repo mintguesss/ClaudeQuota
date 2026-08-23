@@ -787,7 +787,9 @@ class CardPainter(Painter):
         else:
             if q.resets_at:
                 left = (q.resets_at - datetime.now(timezone.utc)).total_seconds() / 60
-                t = f"{q.resets_at.astimezone():%H:%M}"
+                # 進位到最近的分鐘：伺服器給的重置時刻可能差幾百毫秒才到整分
+                # （例：08:29:59.9），直接截掉分秒會顯示成早一分鐘。
+                t = f"{(q.resets_at + timedelta(seconds=30)).astimezone():%H:%M}"
                 sub1 = f"{human_left(left)} · {'' if q.resets_exact else '約 '}{t} 重置"
             else:
                 sub1 = "視窗還沒開始計時 · 按上方閃電鍵可立刻起算"
@@ -1213,8 +1215,7 @@ class App:
         if wait > 0:
             self.window.note(f"官方端點限流中 · {wait:.0f} 秒後才能再問一次", clear_after=4000)
         else:
-            self._api_next = time.time() + quota_source.current_interval()
-            self._pull_api(force=True)
+            self._pull_api(force=True)  # 下次什麼時候再問由 _after_pull 決定
         self.root.after(0, lambda: self.refresh(force=True))
 
     # ── 即時用量 API ──
@@ -1224,14 +1225,31 @@ class App:
             return
         self._api_busy = True
 
+        # 先把下一次排遠一點：萬一這條執行緒卡在逾時上，也不會每 10 秒又疊一條
+        self._api_next = time.time() + 60
+
         def work():
             try:
                 quota_source.refresh_api(force=force)
             finally:
                 self._api_busy = False
-                self.root.after(0, self.refresh)
+                self.root.after(0, self._after_pull)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _after_pull(self):
+        """一次 API 嘗試結束後，重新算下次該問的時間。
+
+        時間點交給 quota_source.seconds_until_allowed()——限流冷卻與自我收斂出來的
+        間隔都在它手上。以前這裡是照固定節奏排的，於是被靜音之後（開機時伺服器回
+        5xx 就會靜音 5 分鐘）還要再等一整個間隔才重試，開機後得等上好幾分鐘才看得到
+        正確數字。現在靜音一結束就立刻再試。
+
+        失敗但沒被靜音時（網路瞬斷、開機時網路還沒起來）它會回 0，下限 20 秒讓我們
+        很快再試一次，而不是空等一個間隔。
+        """
+        self._api_next = time.time() + max(quota_source.seconds_until_allowed(), 20.0)
+        self.refresh()
 
     # ── 開啟 5 小時視窗 ──
     def set_tray_style(self, style: str):
@@ -1317,10 +1335,8 @@ class App:
 
     def refresh(self, *_, force: bool = False):
         # 畫面每 REFRESH_SEC 重畫是為了倒數；網路照 quota_source 自己收斂出來的節奏
-        now = time.time()
-        if now >= self._api_next:
-            self._api_next = now + quota_source.current_interval()
-            self._pull_api()
+        if time.time() >= self._api_next:
+            self._pull_api()  # 下次什麼時候再問由 _after_pull 決定
 
         try:
             q = quota_source.get_quota()
@@ -1341,11 +1357,6 @@ class App:
                 week = f"／每週已用 {q.week_used:.0f}%" if q.week_used is not None else ""
                 stale = "（資料已過期）" if q.stale else ""
                 self.icon.title = f"Claude 已用 {q.percent_used:.0f}%{week}{stale}"
-
-        # 網路瞬斷（URLError 之類）不會靜音，但預設要等一整個間隔才重試，
-        # 等於為了一次閃斷退回 5 分鐘快取兩分鐘。這種情況提早重試。
-        if q is not None and not q.live and not quota_source.is_muted():
-            self._api_next = min(self._api_next, time.time() + 20)
 
         self._maybe_auto_poke(q)
         self._start_ticker()
