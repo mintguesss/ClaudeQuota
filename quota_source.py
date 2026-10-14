@@ -117,22 +117,105 @@ _api_muted_until = 0.0     # 被擋之後暫時別再打
 _api_last_error = ""       # 最近一次失敗原因，給疑難排解看
 
 
-def _oauth_token() -> Optional[str]:
-    """讀 Claude Code 的 access token；過期或格式不符就回 None。"""
+# 換發 access token 用的端點與 client id，跟 Claude Code 自己 refresh 時用的一樣
+TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
+CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+REFRESH_RETRY = 900         # 換發失敗後隔多久再試（秒）
+
+_refresh_lock = threading.Lock()
+_refresh_muted_until = 0.0
+
+
+def _read_oauth() -> tuple[Optional[dict], dict]:
+    """讀整份憑證檔，回傳 (整份內容, claudeAiOauth 區塊)。"""
     try:
         with open(CREDENTIALS, encoding="utf-8-sig") as f:
-            oauth = json.load(f).get("claudeAiOauth") or {}
-    except (OSError, json.JSONDecodeError, AttributeError):
-        return None
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None, {}
+    if not isinstance(data, dict):
+        return None, {}
+    oauth = data.get("claudeAiOauth")
+    return data, oauth if isinstance(oauth, dict) else {}
+
+
+def _valid_token(oauth: dict) -> Optional[str]:
     token = oauth.get("accessToken")
     if not isinstance(token, str) or not token:
         return None
     expires = oauth.get("expiresAt")
-    # expiresAt 是毫秒。留 60 秒緩衝，快過期就當作沒有——不自己做 refresh，
-    # 那是 Claude Code 的事，硬搶著換可能把它的登入狀態弄壞。
+    # expiresAt 是毫秒。留 60 秒緩衝，快過期就當作沒有
     if isinstance(expires, (int, float)) and time.time() * 1000 > expires - 60_000:
         return None
     return token
+
+
+def _refresh_token() -> Optional[str]:
+    """token 過期時自己用 refresh token 換新的，並寫回憑證檔。
+
+    Claude Code 只在 CLI 有在跑時才會換 token；只用桌面版的話憑證檔會一直停在過期狀態，
+    用量就永遠抓不到。換到的新 token（含輪替後的 refresh token）寫回同一個檔案，
+    Claude Code 下次啟動直接沿用，不會被弄壞登入狀態。
+    """
+    global _refresh_muted_until, _api_last_error
+    with _refresh_lock:
+        # 拿到鎖後重讀一次：可能 Claude Code 或另一條執行緒剛換過了
+        data, oauth = _read_oauth()
+        token = _valid_token(oauth)
+        if token or data is None:
+            return token
+        if time.time() < _refresh_muted_until:
+            return None
+        refresh = oauth.get("refreshToken")
+        if not isinstance(refresh, str) or not refresh:
+            return None
+        rexp = oauth.get("refreshTokenExpiresAt")
+        if isinstance(rexp, (int, float)) and time.time() * 1000 > rexp:
+            _api_last_error = "登入已過期，請重新執行 claude 登入"
+            _refresh_muted_until = time.time() + REFRESH_RETRY
+            return None
+
+        body = {"grant_type": "refresh_token", "refresh_token": refresh, "client_id": CLIENT_ID}
+        scopes = oauth.get("scopes")
+        if isinstance(scopes, list) and scopes:
+            body["scope"] = " ".join(scopes)
+        req = urllib.request.Request(
+            TOKEN_URL, data=json.dumps(body).encode(), method="POST",
+            headers={"Content-Type": "application/json", "User-Agent": "ClaudeQuota/1.0"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=API_TIMEOUT) as r:
+                resp = json.loads(r.read().decode("utf-8", "ignore"))
+            access = resp["access_token"]
+            expires_in = float(resp["expires_in"])
+        except Exception as e:
+            _api_last_error = f"token 換發失敗：{type(e).__name__}: {e}"
+            _refresh_muted_until = time.time() + REFRESH_RETRY
+            return None
+
+        oauth = dict(oauth)
+        oauth["accessToken"] = access
+        oauth["refreshToken"] = resp.get("refresh_token") or refresh
+        oauth["expiresAt"] = int(time.time() * 1000 + expires_in * 1000)
+        if isinstance(resp.get("scope"), str) and resp["scope"]:
+            oauth["scopes"] = resp["scope"].split()
+        data["claudeAiOauth"] = oauth
+        # 先寫暫存檔再取代，避免寫到一半被 Claude Code 讀到壞檔
+        tmp = CREDENTIALS + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp, CREDENTIALS)
+        except OSError as e:
+            # 寫不回去的話舊 refresh token 可能已經失效，至少這次的 token 還能用
+            _api_last_error = f"新 token 寫回失敗：{e}"
+        return access
+
+
+def _oauth_token() -> Optional[str]:
+    """讀 Claude Code 的 access token；過期就自己換發，換不到才回 None。"""
+    _data, oauth = _read_oauth()
+    return _valid_token(oauth) or _refresh_token()
 
 
 def _parse_window(node) -> tuple[Optional[float], Optional[datetime]]:
