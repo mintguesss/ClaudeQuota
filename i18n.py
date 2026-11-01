@@ -56,8 +56,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "note.rate_limited": {"zh": "官方端點限流中 · {sec} 秒後才能再問一次",
                           "en": "Rate-limited · next check possible in {sec}s"},
     "note.auto_poke": {"zh": "視窗重置後自動起算：{state}", "en": "Auto-start after reset: {state}"},
-    "note.auto_poke_on": {"zh": "已開啟自動起算 · 每次起算都會花一點額度",
-                          "en": "Auto-start on · each start uses a little quota"},
+    "note.auto_poke_on": {"zh": "已開啟自動起算 · 每次約花 5 小時額度的 1–2%",
+                          "en": "Auto-start on · each start uses about 1–2% of the 5-hour limit"},
     "note.token_refresh": {"zh": "自動換發過期 token：{state}", "en": "Refresh expired token: {state}"},
     "note.token_refresh_on": {"zh": "已開啟換發 · Claude Code 執行中時可能要你重新登入",
                               "en": "Token refresh on · a running Claude Code may ask you to sign in"},
@@ -71,7 +71,12 @@ STRINGS: dict[str, dict[str, str]] = {
     "tray.week": {"zh": "／每週已用 {pct}%", "en": " / week {pct}%"},
     "tray.stale": {"zh": "（資料已過期）", "en": " (stale)"},
     "style.burst": {"zh": "星芒（狀態色底）", "en": "Burst (status color)"},
-    "style.number": {"zh": "純大數字", "en": "Number only"},
+    "style.number": {"zh": "數字（已用 %）", "en": "Number (% used)"},
+    "style.left": {"zh": "數字（剩餘 %）", "en": "Number (% left)"},
+    "style.ring": {"zh": "進度環", "en": "Ring"},
+    "style.pie": {"zh": "圓餅", "en": "Pie"},
+    "style.dual": {"zh": "雙條（5 小時＋每週）", "en": "Two bars (5-hour + weekly)"},
+    "style.battery": {"zh": "電池（剩餘）", "en": "Battery (left)"},
     "menu.show": {"zh": "顯示／隱藏", "en": "Show / hide"},
     "menu.mini": {"zh": "縮成橫條", "en": "Shrink to bar"},
     "menu.refresh": {"zh": "立即重新整理", "en": "Refresh now"},
@@ -95,7 +100,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 上一個視窗一結束就開始計時，一天內的重置時間會提早\n"
             "• 不用記得手動按閃電鍵\n\n"
             "代價\n"
-            "• 每次都會花一點額度，即使你那段時間本來不打算用\n"
+            "• 每次約花 5 小時額度的 1–2%（實測一次約 3 萬 token），即使你那段時間本來不打算用\n"
             "• 人不在電腦前時開的視窗，可能還沒用就過期了\n\n"
             "隨時可以在右鍵選單關掉。"
         ),
@@ -105,7 +110,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "• The clock starts as soon as the previous window ends, so it resets earlier in your day\n"
             "• No need to remember the bolt button\n\n"
             "Cons\n"
-            "• Uses a little quota each time, even if you were not going to use Claude\n"
+            "• Each start uses about 1–2% of the 5-hour limit (about 30k tokens in our test), "
+            "even if you were not going to use Claude\n"
             "• A window started while you are away may expire unused\n\n"
             "You can turn it off again from the tray menu."
         ),
@@ -149,7 +155,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 每週額度：每週重置一次\n"
             "數字都是官方的，取不到就顯示「讀不到額度資料」，不會自己估。\n\n"
             "■ 系統列圖示\n"
-            "• 圖示上的數字＝5 小時額度已用 %\n"
+            "• 圖示顯示 5 小時額度的用量，有 7 種樣式，可在右鍵選單的「圖示樣式」切換\n"
             "• 左鍵：顯示或收起卡片\n"
             "• 右鍵：打開選單\n\n"
             "■ 卡片右上角的按鈕\n"
@@ -161,7 +167,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "■ 右鍵選單\n"
             "• 顯示／隱藏、縮成橫條：同上\n"
             "• 立即重新整理、開啟 5 小時視窗：同卡片上的 ↻ 和 ⚡\n"
-            "• 重置後自動起算：視窗結束後自動開下一個（會花額度，預設關閉，開啟前會說明）\n"
+            "• 重置後自動起算：視窗結束後自動開下一個（每次約花 1–2%，預設關閉，開啟前會說明）\n"
             "• 自動換發過期 token：token 過期時自己換新的（有登出風險，預設關閉，開啟前會說明）\n"
             "• 移回畫面內：卡片跑到螢幕外找不到時用\n"
             "• 圖示樣式、語言：外觀設定\n\n"
@@ -182,7 +188,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• Weekly limit: resets once a week\n"
             "Numbers are official. If none are available it says \"No usage data\" instead of guessing.\n\n"
             "■ Tray icon\n"
-            "• The number on the icon = % of the 5-hour limit used\n"
+            "• The icon shows your 5-hour usage; pick one of 7 styles under Icon style in the menu\n"
             "• Left-click: show or hide the card\n"
             "• Right-click: open the menu\n\n"
             "■ Card buttons (top right)\n"
@@ -194,8 +200,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "■ Tray menu\n"
             "• Show / hide, Shrink to bar: as above\n"
             "• Refresh now, Start 5-hour window: same as ↻ and ⚡ on the card\n"
-            "• Auto-start after reset: start the next window automatically (uses quota; off by default, "
-            "explained before turning on)\n"
+            "• Auto-start after reset: start the next window automatically (about 1–2% each time; "
+            "off by default, explained before turning on)\n"
             "• Refresh expired token: renew an expired token itself (may sign Claude Code out; off by default, "
             "explained before turning on)\n"
             "• Move back on screen: if the card ended up off-screen\n"

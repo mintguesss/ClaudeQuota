@@ -575,6 +575,11 @@ def poke_window() -> tuple[bool, str]:
 TRAY_STYLES = [
     ("burst", "style.burst"),
     ("number", "style.number"),
+    ("left", "style.left"),
+    ("ring", "style.ring"),
+    ("pie", "style.pie"),
+    ("dual", "style.dual"),
+    ("battery", "style.battery"),
 ]
 TRAY_S = 256
 
@@ -615,7 +620,7 @@ def _burst_mask(size: int) -> Image.Image | None:
     )
 
 
-def _tray_burst(pct, S):
+def _tray_burst(pct, S, week=None):
     """狀態色圓角底 + 白色星芒。最像真的 app icon，但沒有數字。"""
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     ImageDraw.Draw(img).rounded_rectangle([0, 0, S - 1, S - 1], S * 0.24,
@@ -626,17 +631,21 @@ def _tray_burst(pct, S):
     return img
 
 
-def _tray_number(pct, S):
+def _tray_number(pct, S, week=None, show_left=False):
     """狀態色圓角底 + 白色大數字 + 底部細進度條。
 
     圖示格子是 Shell 定死的 28x28（SM_CXSMICON），沒有 API 能放大，
     所以走扁平路線：字塞好塞滿、只留一條進度細線。發光或漸層在這個尺寸
-    只會把字的邊緣糊掉，看起來更小。
+    只會把字的邊緣糊掉，看起來更小。show_left=True 時數字與進度條都改成「剩餘」。
     """
+    bg_pct = pct
+    if show_left and pct is not None:
+        pct = 100 - pct
     text = "?" if pct is None else f"{pct:.0f}"
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle([0, 0, S - 1, S - 1], S * 0.24, fill=_state_fill(pct) + (255,))
+    # 底色永遠跟「已用」走，顯示剩餘時也是越少越紅
+    d.rounded_rectangle([0, 0, S - 1, S - 1], S * 0.24, fill=_state_fill(bg_pct) + (255,))
 
     # 數字往上讓一點給進度條
     mask = Image.new("L", (S, S), 0)
@@ -648,18 +657,104 @@ def _tray_number(pct, S):
     y0, y1 = int(S * 0.845), int(S * 0.895)
     x0, x1 = int(S * 0.14), int(S * 0.86)
     r = (y1 - y0) / 2
-    d.rounded_rectangle([x0, y0, x1, y1], r, fill=(255, 255, 255, 90))
+    d.rounded_rectangle([x0, y0, x1, y1], r, fill=_track(bg_pct))
     w = int((x1 - x0) * (pct or 0) / 100)
     if w:
         d.rounded_rectangle([x0, y0, x0 + max(w, y1 - y0), y1], r, fill=(255, 255, 255, 255))
     return img
 
 
-_TRAY_FN = {"burst": _tray_burst, "number": _tray_number}
+def _track(pct) -> tuple:
+    """狀態色底上的淡色軌道。
+
+    要先算成實色再畫：ImageDraw 在 RGBA 上畫半透明色是「取代」不是「疊上去」，
+    畫出來會變成半透明的洞，在工作列上透出底下的顏色。
+    """
+    c = _state_fill(pct)
+    return tuple(round(v + (255 - v) * 0.4) for v in c) + (255,)
 
 
-def make_tray_image(pct_used: float | None, style: str = "burst") -> Image.Image:
-    return _TRAY_FN.get(style, _tray_burst)(pct_used, TRAY_S)
+def _tile(pct, S, round_=True):
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    fill = _state_fill(pct) + (255,)
+    if round_:
+        d.rounded_rectangle([0, 0, S - 1, S - 1], S * 0.24, fill=fill)
+    else:
+        d.ellipse([0, 0, S - 1, S - 1], fill=fill)
+    return img, d
+
+
+def _tray_ring(pct, S, week=None):
+    """狀態色圓底 + 外圈白色進度環 + 中間數字。"""
+    img, d = _tile(pct, S, round_=False)
+    w = round(S * 0.11)
+    box = [w / 2 + S * 0.05, w / 2 + S * 0.05, S - w / 2 - S * 0.05, S - w / 2 - S * 0.05]
+    d.arc(box, 0, 360, fill=_track(pct), width=w)
+    if pct:
+        d.arc(box, -90, -90 + 3.6 * pct, fill=(255, 255, 255, 255), width=w)
+    text = "?" if pct is None else f"{pct:.0f}"
+    mask = Image.new("L", (S, S), 0)
+    md = ImageDraw.Draw(mask)
+    _centered(md, (S / 2, S / 2), text, _fit_text(md, text, S * 0.52, S * 0.44), 255)
+    img.paste((255, 255, 255, 255), (0, 0), mask)
+    return img
+
+
+def _tray_pie(pct, S, week=None):
+    """狀態色圓角底 + 白色圓餅：一眼看比例，不讀數字。"""
+    img, d = _tile(pct, S)
+    m = S * 0.16
+    box = [m, m, S - m, S - m]
+    d.ellipse(box, fill=_track(pct))
+    if pct:
+        d.pieslice(box, -90, -90 + 3.6 * pct, fill=(255, 255, 255, 255))
+    return img
+
+
+def _tray_dual(pct, S, week=None):
+    """兩條粗進度條：上面 5 小時、下面每週。唯一一個同時看得到兩個額度的樣式。"""
+    img, d = _tile(pct, S)
+    x0, x1 = S * 0.16, S * 0.84
+    for y, h, value in ((S * 0.24, S * 0.22, pct), (S * 0.58, S * 0.18, week)):
+        r = h / 2
+        d.rounded_rectangle([x0, y, x1, y + h], r, fill=_track(pct))
+        if value:
+            w = max((x1 - x0) * value / 100, h)
+            d.rounded_rectangle([x0, y, x0 + w, y + h], r, fill=(255, 255, 255, 255))
+    return img
+
+
+def _tray_battery(pct, S, week=None):
+    """電池：裡面的白色填滿是「還剩多少」，跟手機電量一樣越用越少。"""
+    img, d = _tile(pct, S)
+    lw = round(S * 0.06)
+    body = [S * 0.12, S * 0.30, S * 0.80, S * 0.70]
+    d.rounded_rectangle(body, S * 0.07, outline=(255, 255, 255, 255), width=lw)
+    d.rounded_rectangle([S * 0.82, S * 0.42, S * 0.90, S * 0.58], S * 0.03, fill=(255, 255, 255, 255))
+    left = 0 if pct is None else max(0.0, 100 - pct)
+    pad = lw + S * 0.035
+    inner_w = (body[2] - body[0]) - pad * 2
+    if left:
+        d.rounded_rectangle([body[0] + pad, body[1] + pad,
+                             body[0] + pad + max(inner_w * left / 100, S * 0.04), body[3] - pad],
+                            S * 0.03, fill=(255, 255, 255, 255))
+    return img
+
+
+def _tray_left(pct, S, week=None):
+    return _tray_number(pct, S, week, show_left=True)
+
+
+_TRAY_FN = {
+    "burst": _tray_burst, "number": _tray_number, "left": _tray_left, "ring": _tray_ring,
+    "pie": _tray_pie, "dual": _tray_dual, "battery": _tray_battery,
+}
+
+
+def make_tray_image(pct_used: float | None, style: str = "burst",
+                    week_used: float | None = None) -> Image.Image:
+    return _TRAY_FN.get(style, _tray_burst)(pct_used, TRAY_S, week_used)
 
 
 # ──────────────────────────────── 卡片繪製 ────────────────────────────────
@@ -1380,23 +1475,23 @@ class App:
         body.pack(fill="both", expand=True)
         # 中文沒有空格，"word" 會找不到斷點而把整行推到下一行，所以中文逐字換行
         text = tk.Text(body, wrap="word" if en else "char", relief="flat", bg=page, fg=ink,
-                       font=(family, 10), padx=26, pady=8, spacing1=2, spacing3=2,
-                       width=60, height=26, cursor="arrow", highlightthickness=0, borderwidth=0)
+                       font=(family, 10), padx=32, pady=12, spacing1=3, spacing2=5, spacing3=3,
+                       width=58, height=28, cursor="arrow", highlightthickness=0, borderwidth=0)
         bar = tk.Scrollbar(body, command=text.yview)
         text.configure(yscrollcommand=bar.set)
         bar.pack(side="right", fill="y")
         text.pack(side="left", fill="both", expand=True)
 
-        text.tag_configure("intro", font=(family, 10), foreground=muted, spacing3=1)
-        text.tag_configure("head", font=(bold, 11, "bold"), foreground=orange, spacing1=16, spacing3=4)
+        text.tag_configure("intro", font=(family, 10), foreground=muted, spacing3=4)
+        text.tag_configure("head", font=(bold, 11, "bold"), foreground=orange, spacing1=24, spacing3=8)
         # 圓點固定用小號 Segoe UI（正黑體的 ● 很大），懸掛縮排用量出來的寬度，換行才會對齊文字
         import tkinter.font as tkfont
         dot_font = tkfont.Font(family="Segoe UI", size=7)
         hang = 6 + dot_font.measure("●") + tkfont.Font(family=family, size=10).measure("  ")
-        text.tag_configure("bullet", lmargin1=6, lmargin2=hang, spacing3=3)
+        text.tag_configure("bullet", lmargin1=6, lmargin2=hang, spacing1=4, spacing3=6)
         text.tag_configure("dot", foreground=orange, font=dot_font)
         text.tag_configure("term", font=(bold, 10, "bold"))
-        text.tag_configure("note", foreground=muted, lmargin1=6, lmargin2=6)
+        text.tag_configure("note", foreground=muted, lmargin1=6, lmargin2=6, spacing1=6)
 
         seen_head = False
         for raw in t("help.body").split("\n"):
@@ -1519,9 +1614,10 @@ class App:
         self.mini.render(q)
 
         pct = None if q is None else round(q.percent_used)
-        if self.icon and (pct != self._tray_pct or force):
-            self._tray_pct = pct
-            self.icon.icon = make_tray_image(pct, self.tray_style)
+        week = None if q is None or q.week_used is None else round(q.week_used)
+        if self.icon and ((pct, week) != self._tray_pct or force):  # 雙條樣式也畫每週，所以兩個都看
+            self._tray_pct = (pct, week)
+            self.icon.icon = make_tray_image(pct, self.tray_style, week)
             if q is None:
                 self.icon.title = t("tray.no_data")
             else:

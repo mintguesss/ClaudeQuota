@@ -15,7 +15,7 @@ A small Windows tray app for Claude Pro / Max users. It shows the official usage
 
 ## Features
 
-- **Tray icon** with the percentage used; hover for a summary
+- **Tray icon** with your 5-hour usage in 7 styles; hover for a summary
 - **Floating card** with both limits, progress bars and the exact reset time; drag it anywhere
 - **Mini bar** that sits next to the taskbar, or hide everything and keep only the tray icon
 - Stays put through Win+D and virtual desktop switches, and **gets out of the way of full-screen games and videos**
@@ -54,25 +54,20 @@ Left-click the tray icon to show or hide the card; right-click for the menu. The
 | ─ | Shrink to the mini bar |
 | ✕ | Hide (keeps running in the tray) |
 
-### Two opt-in settings
+### Icon styles
 
-Both are **off by default** because they spend quota or touch your Claude Code login. Turn them on in the tray menu if the trade-off suits you; the app shows the same pros and cons and asks before turning either one on.
+Pick one under **Icon style** in the tray menu. The colour follows your 5-hour usage and turns red as you near the limit.
 
-**Auto-start after reset**: when no 5-hour window is running, run `claude -p hi` so a new window starts right away.
+<img src="docs/tray-styles-en.png" alt="Seven tray icon styles shown on light and dark taskbars: burst, number used, number left, ring, pie, two bars, battery">
 
-| Pros | Cons |
-| --- | --- |
-| The 5-hour clock starts as soon as the previous one ends, so it resets earlier in your day | Spends a small amount of quota each time, even if you were not going to use Claude |
-| No need to remember to "kick off" the window | A window started while you are away may run out unused |
+### Two optional settings (off by default)
 
-**Refresh expired token (advanced)**: when Claude Code's access token has expired (for example you only use the desktop app and never open the CLI), get a new one with the refresh token and save it back to `~/.claude/.credentials.json`.
+| Setting | What it does | Cost |
+| --- | --- | --- |
+| **Auto-start after reset** | Starts a new 5-hour window as soon as the last one ends, so your reset time comes earlier | About **1–2% of the 5-hour limit** each time (measured: one `claude -p hi`, ~30k tokens) |
+| **Refresh expired token** | Keeps live numbers working when Claude Code hasn't run for a while | May make a running Claude Code ask you to sign in again. Off, you just see the desktop app's cache until you open Claude Code |
 
-| Pros | Cons |
-| --- | --- |
-| Live numbers keep working even when Claude Code has not run for a while | Refreshing rotates the refresh token. If Claude Code is running at that moment with the old one in memory, it may ask you to sign in again |
-| Without it, you fall back to the desktop app's cache, which can be up to 5 minutes old | It uses Claude Code's own OAuth client. That interface is undocumented and not offered for third-party apps, so it may stop working or change at any time |
-
-With this off, an expired token simply means the card shows the desktop cache (or "No usage data") until you open Claude Code once.
+The app explains each one and asks before turning it on.
 
 ## Data and privacy
 
@@ -103,7 +98,7 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 
 ### 功能
 
-- 系統列圖示直接顯示已用百分比，滑鼠停留可看摘要
+- 系統列圖示顯示 5 小時用量，有 7 種樣式可選；滑鼠停留可看摘要
 - 置頂卡片顯示兩個額度的用量、進度條與重置時間，可拖曳定位
 - 卡片可縮成一條細橫條，或收起只留系統列圖示
 - 不受「顯示桌面」（Win+D）或切換虛擬桌面影響；全螢幕的遊戲或影片會自動讓開，結束後自己回來
@@ -122,25 +117,20 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 
 從原始碼執行：`pip install pystray pillow` 後雙擊 `啟動.vbs`（不會出現主控台視窗）。
 
-### 兩個預設關閉的設定
+### 圖示樣式
 
-這兩個功能會花額度或動到 Claude Code 的登入，所以**預設關閉**，覺得划算再從系統列選單開啟。開啟前程式會先跳出說明好處與代價，確認後才會打開。系統列選單的「**使用說明**」也會逐項解釋每個按鈕和選單功能。
+在系統列選單的「**圖示樣式**」切換。顏色跟著 5 小時用量走，快用完時會變紅。
 
-**重置後自動起算**：沒有進行中的 5 小時視窗時，自動執行 `claude -p hi` 讓新視窗立刻開始。
+<img src="docs/tray-styles-zh.png" alt="七種系統列圖示樣式，分別放在淺色與深色工作列上：星芒、已用數字、剩餘數字、進度環、圓餅、雙條、電池">
 
-| 好處 | 代價 |
-| --- | --- |
-| 上一個視窗一結束就開始計時，一天內的重置時間會提早 | 每次都會花一點額度，即使你那段時間本來不打算用 |
-| 不用記得手動「點著」視窗 | 人不在電腦前時開的視窗可能白白過期 |
+### 兩個選用設定（預設關閉）
 
-**自動換發過期 token（進階）**：Claude Code 的 access token 過期時（例如只用桌面版、很久沒開 CLI），用 refresh token 換新的並寫回 `~/.claude/.credentials.json`。
+| 設定 | 作用 | 代價 |
+| --- | --- | --- |
+| **重置後自動起算** | 上一個 5 小時視窗一結束就開新的，重置時間會提早 | 每次約花 **5 小時額度的 1–2%**（實測一次 `claude -p hi` 約 3 萬 token） |
+| **自動換發過期 token** | Claude Code 很久沒開時也能看到即時數字 | 正在執行的 Claude Code 可能會要你重新登入。不開的話只會改顯示桌面版快取，開一次 Claude Code 就恢復 |
 
-| 好處 | 代價 |
-| --- | --- |
-| Claude Code 很久沒開也能看到即時數字 | 換發會讓舊的 refresh token 失效；如果當下 Claude Code 正在執行、記憶體裡拿著舊的，它可能會要求你重新登入 |
-| 不開的話只能退回桌面版快取，最多落後 5 分鐘 | 用的是 Claude Code 自己的 OAuth client，這不是公開給第三方的介面，隨時可能失效或改變 |
-
-不開的情況下 token 過期只會讓卡片改顯示桌面版快取（或「讀不到額度資料」），打開一次 Claude Code 就恢復。
+開啟前程式會先說明並詢問；系統列選單的「**使用說明**」也會逐項解釋每個按鈕和功能。
 
 ### 資料與隱私
 
