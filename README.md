@@ -11,13 +11,14 @@ A small Windows tray app for Claude Pro / Max users. It shows the official usage
 
 [中文說明](#中文說明)
 
-<img src="docs/hero-en.png" alt="ClaudeQuota on a Windows 11 desktop: a floating card showing the 5-hour limit at 42% with 2h 16m left and the weekly limit at 18%, a mini bar above the taskbar, the tray icon showing 42, and the tray menu">
+<img src="docs/hero-en.png" alt="ClaudeQuota on a Windows 11 desktop: a floating card showing the 5-hour limit at 42% with 2h 16m left and the weekly limit at 18%, a mini bar docked on the taskbar, the tray icon showing 42, and the tray menu">
 
 ## Features
 
-- **Tray icon** with your 5-hour usage in 7 styles; hover for a summary
-- **Floating card** with both limits, progress bars and the exact reset time; drag it anywhere
-- **Mini bar** that sits next to the taskbar, or hide everything and keep only the tray icon
+- **Tray icon** with your 5-hour usage in 6 styles; hover for a summary
+- **Floating card** with both limits, progress bars and the exact reset time
+- **Mini bar** you can dock on the taskbar, or hide everything and keep only the tray icon
+- **Put them anywhere**: drag the card and the mini bar wherever you like. Each remembers its own spot and reopens there next time
 - Stays put through Win+D and virtual desktop switches, and **gets out of the way of full-screen games and videos**
 - **Official numbers only**: read from Anthropic's usage endpoint about every 2 minutes, falling back to the Claude desktop app's local cache. If neither is available it says so instead of guessing
 - English and Chinese interface, following your Windows language (switchable in the tray menu)
@@ -58,7 +59,7 @@ Left-click the tray icon to show or hide the card; right-click for the menu. The
 
 Pick one under **Icon style** in the tray menu. The colour follows your 5-hour usage and turns red as you near the limit.
 
-<img src="docs/tray-styles-en.png" alt="Seven tray icon styles shown on light and dark taskbars: burst, number used, number left, ring, pie, two bars, battery">
+<img src="docs/tray-styles-en.png" alt="Six tray icon styles shown on light and dark taskbars: burst, number used, number left, ring, pie, two bars">
 
 ### Two optional settings (off by default)
 
@@ -94,13 +95,14 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 
 給 Claude Pro / Max 使用者的 Windows 系統列小工具，顯示官方用量數字與 5 小時視窗的重置時間，不會再做到一半才突然撞到額度上限。
 
-<img src="docs/hero-zh.png" alt="ClaudeQuota 在 Windows 11 桌面上：置頂卡片顯示 5 小時額度 42%、剩 2 小時 16 分，每週額度 18%；工作列上方的迷你橫條、顯示 42 的系統列圖示與右鍵選單">
+<img src="docs/hero-zh.png" alt="ClaudeQuota 在 Windows 11 桌面上：置頂卡片顯示 5 小時額度 42%、剩 2 小時 16 分，每週額度 18%；放在工作列上的迷你橫條、顯示 42 的系統列圖示與右鍵選單">
 
 ### 功能
 
-- 系統列圖示顯示 5 小時用量，有 7 種樣式可選；滑鼠停留可看摘要
-- 置頂卡片顯示兩個額度的用量、進度條與重置時間，可拖曳定位
-- 卡片可縮成一條細橫條，或收起只留系統列圖示
+- 系統列圖示顯示 5 小時用量，有 6 種樣式可選；滑鼠停留可看摘要
+- 置頂卡片顯示兩個額度的用量、進度條與重置時間
+- 卡片可縮成一條細橫條放在工作列上，或收起只留系統列圖示
+- **位置隨你放**：卡片和橫條都能拖到任何地方，各自記住位置，下次開啟會出現在同一個地方
 - 不受「顯示桌面」（Win+D）或切換虛擬桌面影響；全螢幕的遊戲或影片會自動讓開，結束後自己回來
 - **只用官方數字**：約每 2 分鐘向 Anthropic 用量端點取得，取不到時改讀 Claude 桌面版的本機快取；兩者都沒有就明說讀不到，不做推估
 - 中英文介面，跟隨 Windows 語言（可在系統列選單切換）
@@ -121,7 +123,7 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 
 在系統列選單的「**圖示樣式**」切換。顏色跟著 5 小時用量走，快用完時會變紅。
 
-<img src="docs/tray-styles-zh.png" alt="七種系統列圖示樣式，分別放在淺色與深色工作列上：星芒、已用數字、剩餘數字、進度環、圓餅、雙條、電池">
+<img src="docs/tray-styles-zh.png" alt="六種系統列圖示樣式，分別放在淺色與深色工作列上：星芒、已用數字、剩餘數字、進度環、圓餅、雙條">
 
 ### 兩個選用設定（預設關閉）
 

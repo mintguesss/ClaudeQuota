@@ -579,7 +579,6 @@ TRAY_STYLES = [
     ("ring", "style.ring"),
     ("pie", "style.pie"),
     ("dual", "style.dual"),
-    ("battery", "style.battery"),
 ]
 TRAY_S = 256
 
@@ -725,30 +724,13 @@ def _tray_dual(pct, S, week=None):
     return img
 
 
-def _tray_battery(pct, S, week=None):
-    """電池：裡面的白色填滿是「還剩多少」，跟手機電量一樣越用越少。"""
-    img, d = _tile(pct, S)
-    lw = round(S * 0.06)
-    body = [S * 0.12, S * 0.30, S * 0.80, S * 0.70]
-    d.rounded_rectangle(body, S * 0.07, outline=(255, 255, 255, 255), width=lw)
-    d.rounded_rectangle([S * 0.82, S * 0.42, S * 0.90, S * 0.58], S * 0.03, fill=(255, 255, 255, 255))
-    left = 0 if pct is None else max(0.0, 100 - pct)
-    pad = lw + S * 0.035
-    inner_w = (body[2] - body[0]) - pad * 2
-    if left:
-        d.rounded_rectangle([body[0] + pad, body[1] + pad,
-                             body[0] + pad + max(inner_w * left / 100, S * 0.04), body[3] - pad],
-                            S * 0.03, fill=(255, 255, 255, 255))
-    return img
-
-
 def _tray_left(pct, S, week=None):
     return _tray_number(pct, S, week, show_left=True)
 
 
 _TRAY_FN = {
     "burst": _tray_burst, "number": _tray_number, "left": _tray_left, "ring": _tray_ring,
-    "pie": _tray_pie, "dual": _tray_dual, "battery": _tray_battery,
+    "pie": _tray_pie, "dual": _tray_dual,
 }
 
 
@@ -1475,23 +1457,23 @@ class App:
         body.pack(fill="both", expand=True)
         # 中文沒有空格，"word" 會找不到斷點而把整行推到下一行，所以中文逐字換行
         text = tk.Text(body, wrap="word" if en else "char", relief="flat", bg=page, fg=ink,
-                       font=(family, 10), padx=32, pady=12, spacing1=3, spacing2=5, spacing3=3,
+                       font=(family, 10), padx=36, pady=16, spacing1=3, spacing2=8, spacing3=3,
                        width=58, height=28, cursor="arrow", highlightthickness=0, borderwidth=0)
         bar = tk.Scrollbar(body, command=text.yview)
         text.configure(yscrollcommand=bar.set)
         bar.pack(side="right", fill="y")
         text.pack(side="left", fill="both", expand=True)
 
-        text.tag_configure("intro", font=(family, 10), foreground=muted, spacing3=4)
-        text.tag_configure("head", font=(bold, 11, "bold"), foreground=orange, spacing1=24, spacing3=8)
+        text.tag_configure("intro", font=(family, 10), foreground=muted, spacing1=2, spacing3=8)
+        text.tag_configure("head", font=(bold, 11, "bold"), foreground=orange, spacing1=32, spacing3=12)
         # 圓點固定用小號 Segoe UI（正黑體的 ● 很大），懸掛縮排用量出來的寬度，換行才會對齊文字
         import tkinter.font as tkfont
         dot_font = tkfont.Font(family="Segoe UI", size=7)
         hang = 6 + dot_font.measure("●") + tkfont.Font(family=family, size=10).measure("  ")
-        text.tag_configure("bullet", lmargin1=6, lmargin2=hang, spacing1=4, spacing3=6)
+        text.tag_configure("bullet", lmargin1=6, lmargin2=hang, spacing1=7, spacing3=9)
         text.tag_configure("dot", foreground=orange, font=dot_font)
         text.tag_configure("term", font=(bold, 10, "bold"))
-        text.tag_configure("note", foreground=muted, lmargin1=6, lmargin2=6, spacing1=6)
+        text.tag_configure("note", foreground=muted, lmargin1=6, lmargin2=6, spacing1=10)
 
         seen_head = False
         for raw in t("help.body").split("\n"):

@@ -76,7 +76,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "style.ring": {"zh": "進度環", "en": "Ring"},
     "style.pie": {"zh": "圓餅", "en": "Pie"},
     "style.dual": {"zh": "雙條（5 小時＋每週）", "en": "Two bars (5-hour + weekly)"},
-    "style.battery": {"zh": "電池（剩餘）", "en": "Battery (left)"},
     "menu.show": {"zh": "顯示／隱藏", "en": "Show / hide"},
     "menu.mini": {"zh": "縮成橫條", "en": "Shrink to bar"},
     "menu.refresh": {"zh": "立即重新整理", "en": "Refresh now"},
@@ -155,7 +154,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 每週額度：每週重置一次\n"
             "數字都是官方的，取不到就顯示「讀不到額度資料」，不會自己估。\n\n"
             "■ 系統列圖示\n"
-            "• 圖示顯示 5 小時額度的用量，有 7 種樣式，可在右鍵選單的「圖示樣式」切換\n"
+            "• 圖示顯示 5 小時額度的用量，有 6 種樣式，可在右鍵選單的「圖示樣式」切換\n"
             "• 左鍵：顯示或收起卡片\n"
             "• 右鍵：打開選單\n\n"
             "■ 卡片右上角的按鈕\n"
@@ -188,7 +187,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• Weekly limit: resets once a week\n"
             "Numbers are official. If none are available it says \"No usage data\" instead of guessing.\n\n"
             "■ Tray icon\n"
-            "• The icon shows your 5-hour usage; pick one of 7 styles under Icon style in the menu\n"
+            "• The icon shows your 5-hour usage; pick one of 6 styles under Icon style in the menu\n"
             "• Left-click: show or hide the card\n"
             "• Right-click: open the menu\n\n"
             "■ Card buttons (top right)\n"
