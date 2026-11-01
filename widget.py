@@ -23,14 +23,24 @@ import sys
 import threading
 import time
 import tkinter as tk
+from tkinter import messagebox
 from datetime import datetime, timedelta, timezone
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
+import i18n
 import quota_source
+from i18n import t
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-STATE_FILE = os.path.join(APP_DIR, "widget_state.json")
+# 打包成 exe 時 __file__ 在每次啟動都不同的暫存資料夾裡，設定存那裡會一關就消失，
+# 所以改放 %APPDATA%\ClaudeQuota。直接跑原始碼時維持放在程式旁邊。
+if getattr(sys, "frozen", False):
+    DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "ClaudeQuota")
+    os.makedirs(DATA_DIR, exist_ok=True)
+else:
+    DATA_DIR = APP_DIR
+STATE_FILE = os.path.join(DATA_DIR, "widget_state.json")
 # 讀檔有快取（檔案沒變就不重解析），一次 tick 幾乎沒有成本；畫面也只在內容真的變了
 # 才重繪。真正的資料源頭是桌面版每 5 分鐘寫一次檔，所以再短也不會更即時，
 # 縮短只是讓倒數與過期提示跟得上。
@@ -74,6 +84,7 @@ WEEK_ACCENT = (78, 120, 205)
 FONTS = {
     "en": r"C:\Windows\Fonts\segoeui.ttf",
     "en_sb": r"C:\Windows\Fonts\seguisb.ttf",
+    "en_l": r"C:\Windows\Fonts\segoeuil.ttf",
     "zh": r"C:\Windows\Fonts\msjh.ttc",       # 微軟正黑體：Segoe UI 沒有中文 glyph
     "zh_l": r"C:\Windows\Fonts\msjhl.ttc",
     "icon": r"C:\Windows\Fonts\SegoeIcons.ttf",  # Segoe Fluent Icons，Windows 11 的系統圖示字型
@@ -89,7 +100,7 @@ ICON_BOLT = "\ue945"     # LightningBolt，用來手動開啟 5 小時視窗
 
 # Claude 官方 app icon。安裝時從桌面版的 MSIX 套件複製過來（見 README），
 # 手繪的放射狀標記怎麼畫都比不上原版。
-LOGO_PATH = os.path.join(APP_DIR, "claude_logo.png")
+LOGO_PATH = os.path.join(DATA_DIR, "claude_logo.png")
 _logo_cache: dict[int, Image.Image] = {}
 
 
@@ -109,6 +120,25 @@ def _extract_logo() -> bool:
         except OSError:
             continue
     return False
+
+
+def _gauge_icon(size: int) -> Image.Image:
+    """程式自己的圖示（橘底 + 儀表環），跟 assets/icon.ico 同一個圖案。"""
+    s = size * 4
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([0, 0, s - 1, s - 1], s * 0.2, fill=CLAUDE_ORANGE)
+    w = round(s * 0.12)
+    box = [s * 0.2, s * 0.2, s * 0.8, s * 0.8]
+    d.arc(box, 0, 360, fill=(236, 170, 148), width=w)
+    d.arc(box, -90, -90 + 0.68 * 360, fill=(255, 255, 255), width=w)
+    return img.resize((size, size), Image.LANCZOS)
+
+
+def _app_icon() -> str:
+    if getattr(sys, "frozen", False):
+        return sys.executable
+    return os.path.join(APP_DIR, "assets", "icon.ico")
 
 
 def claude_logo(size: int) -> Image.Image | None:
@@ -464,11 +494,11 @@ def save_state(**kw) -> None:
 
 def human_left(delta_min: float) -> str:
     if delta_min <= 0:
-        return "已重置"
+        return t("left.reset")
     h, m = divmod(int(delta_min), 60)
     if h and m:
-        return f"剩 {h} 小時 {m} 分"
-    return f"剩 {h} 小時" if h else f"剩 {m} 分"
+        return t("left.hm", h=h, m=m)
+    return t("left.h", h=h) if h else t("left.m", m=m)
 
 
 # ──────────────────────── 手動開啟 5 小時視窗 ────────────────────────
@@ -522,7 +552,7 @@ def poke_window() -> tuple[bool, str]:
     """
     cli = find_claude_cli()
     if not cli:
-        return False, "找不到 claude CLI"
+        return False, t("poke.no_cli")
     try:
         r = subprocess.run(
             [os.environ.get("COMSPEC", "cmd.exe"), "/c", cli, "-p", "hi"],
@@ -530,12 +560,12 @@ def poke_window() -> tuple[bool, str]:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
-        return False, "呼叫逾時"
+        return False, t("poke.timeout")
     except OSError as e:
-        return False, f"啟動失敗：{e}"
+        return False, t("poke.start_failed", e=e)
     if r.returncode != 0:
-        return False, (r.stderr or b"").decode("utf-8", "ignore").strip()[:60] or "呼叫失敗"
-    return True, "已開啟視窗"
+        return False, (r.stderr or b"").decode("utf-8", "ignore").strip()[:60] or t("poke.failed")
+    return True, t("poke.ok")
 
 
 # ──────────────────────────────── 系統列圖示 ────────────────────────────────
@@ -543,8 +573,8 @@ def poke_window() -> tuple[bool, str]:
 # Windows 會把圖示縮到 16～28px（SM_CXSMICON，本機是 28），細節全部會糊掉，
 # 所以每種樣式都先畫 256px 再讓系統縮。四種各有取捨，用系統列選單切換。
 TRAY_STYLES = [
-    ("burst", "星芒（狀態色底）"),
-    ("number", "純大數字"),
+    ("burst", "style.burst"),
+    ("number", "style.number"),
 ]
 TRAY_S = 256
 
@@ -659,6 +689,8 @@ class Painter:
         self.d.text((xy[0] * self.k, xy[1] * self.k), s, font=f, fill=fill, anchor=anchor)
 
     def _f(self, kind, pt):
+        if i18n.lang() == "en":  # 英文介面改用 Segoe UI，比正黑體的英文字形好看
+            kind = {"zh": "en", "zh_l": "en_l"}.get(kind, kind)
         return font(kind, pt * self.k)
 
     def _grad_bar(self, x, y, w, h, frac, colors):
@@ -772,7 +804,7 @@ class CardPainter(Painter):
         self._claude_mark(self.PAD + 9, 24, 10)
         self._text((self.PAD + 26, 18), "Claude", self._f("en", 12), SUB)
         if q and q.stale:
-            self._text((self.PAD + 78, 18), "· 資料已過期", self._f("zh_l", 11), WARN_RED)
+            self._text((self.PAD + 78, 18), t("card.stale"), self._f("zh_l", 11), WARN_RED)
         self._icon_button(self.W - 108, 24, "poke", ICON_BOLT, hot, size=11)
         self._icon_button(self.W - 80, 24, "refresh", ICON_REFRESH, hot)
         self._icon_button(self.W - 52, 24, "mini", ICON_MIN, hot, size=9)
@@ -780,41 +812,37 @@ class CardPainter(Painter):
 
         foot = ""
         if q is None:
-            self._text((self.W / 2, 78), "讀不到額度資料", self._f("zh", 14), TXT, anchor="mm")
-            self._text((self.W / 2, 100), "請開啟 Claude 桌面版並登入一次",
+            self._text((self.W / 2, 78), t("card.no_data"), self._f("zh", 14), TXT, anchor="mm")
+            self._text((self.W / 2, 100), t("card.no_data_hint"),
                        self._f("zh_l", 11), FAINT, anchor="mm")
-            foot = "沒有官方數字就不顯示數字，不做推估"
+            foot = t("card.no_data_foot")
         else:
             if q.resets_at:
                 left = (q.resets_at - datetime.now(timezone.utc)).total_seconds() / 60
                 # 進位到最近的分鐘：伺服器給的重置時刻可能差幾百毫秒才到整分
                 # （例：08:29:59.9），直接截掉分秒會顯示成早一分鐘。
-                t = f"{(q.resets_at + timedelta(seconds=30)).astimezone():%H:%M}"
-                sub1 = f"{human_left(left)} · {'' if q.resets_exact else '約 '}{t} 重置"
+                hm = f"{(q.resets_at + timedelta(seconds=30)).astimezone():%H:%M}"
+                sub1 = t("card.resets", left=human_left(left),
+                         approx="" if q.resets_exact else t("card.approx"), time=hm)
             else:
-                sub1 = "視窗還沒開始計時 · 按上方閃電鍵可立刻起算"
-            self._row(52, "5 小時額度", q.percent_used,
+                sub1 = t("card.not_started")
+            self._row(52, t("card.five_hour"), q.percent_used,
                       grad_for(q.percent_used), accent_for(q.percent_used), sub1)
             if q.week_used is not None:
-                self._row(118, "每週額度", q.week_used, GRAD_WEEK, WEEK_ACCENT)
+                self._row(118, t("card.weekly"), q.week_used, GRAD_WEEK, WEEK_ACCENT)
             if q.live:
                 # 更新節奏會自我收斂、也可能被限流，每次間隔都不同，
                 # 所以直接把「上次更新多久了」秒數寫出來
                 age = quota_source.seconds_since_fetch()
-                foot = "即時官方數字"
+                foot = t("card.live")
                 if age is not None:
-                    foot += f" · {age:.0f} 秒前更新"
+                    foot += t("card.updated_ago", sec=f"{age:.0f}")
             else:
-                age = "剛剛更新" if q.age_min < 1.5 else f"{q.age_min:.0f} 分鐘前取樣"
-                foot = f"桌面版快取 · {age} · {quota_source.api_status()}"
+                age = t("card.desktop_now") if q.age_min < 1.5 else t("card.desktop_ago", min=f"{q.age_min:.0f}")
+                foot = t("card.desktop_foot", age=age, status=quota_source.api_status())
 
         # 頁尾：平常講資料狀態，滑到按鈕上或剛做完動作時換成提示
-        hint = note or {
-            "close": "收起來 · 點系統列圖示可再開啟",
-            "mini": "縮成橫條 · 點橫條可再展開",
-            "refresh": "重新讀取官方數字（受端點限流，約每 2 分鐘一次）",
-            "poke": "打一次最小呼叫，讓 5 小時視窗從現在起算",
-        }.get(hot or "")
+        hint = note or (t(f"hint.{hot}") if hot in ("close", "mini", "refresh", "poke") else None)
         self._text((self.PAD, self.H - 17), hint or foot, self._f("zh_l", 11),
                    SUB if hint else FAINT)
         return self._finish()
@@ -850,7 +878,7 @@ class MiniPainter(Painter):
         self._claude_mark(16, cy, 9)
 
         if q is None:
-            self._text((32, cy), "讀不到額度資料", self._f("zh_l", 11), FAINT, anchor="lm")
+            self._text((32, cy), t("card.no_data"), self._f("zh_l", 11), FAINT, anchor="lm")
             return self._finish()
 
         self._slot(31, "5h", q.percent_used,
@@ -859,7 +887,7 @@ class MiniPainter(Painter):
             sep = 31 + self.SLOT - 4
             self.d.line([sep * self.k, (cy - 7) * self.k, sep * self.k, (cy + 7) * self.k],
                         fill=HAIR, width=max(1, int(self.k)))
-            self._slot(31 + self.SLOT + 8, "週", q.week_used, GRAD_WEEK, WEEK_ACCENT)
+            self._slot(31 + self.SLOT + 8, t("mini.week"), q.week_used, GRAD_WEEK, WEEK_ACCENT)
 
         if q.stale:  # 資料過期時右上角點一個紅點
             self.d.ellipse([(self.W - 9) * self.k, 5 * self.k,
@@ -1077,8 +1105,9 @@ class FloatWindow:
         if q is not None and q.live and self.SHOWS_AGE:
             secs = quota_source.seconds_since_fetch()
             age = None if secs is None else int(secs)
+        # 語言也要算進去：橫條沒有每秒變的東西，少了它切換語言後會一直停在舊語言
         return (
-            self._hot, self._note, age,
+            i18n.lang(), self._hot, self._note, age,
             None if q is None else (q.percent_used, q.week_used, q.resets_exact,
                                     q.stale, q.live, left),
         )
@@ -1168,7 +1197,10 @@ class App:
         self._hook = None  # 殼層事件 hook，要留著參照不然會被回收
 
         st = load_state()
-        self.auto_poke = bool(st.get("auto_poke", True))
+        # 兩個會動到額度或憑證的功能都預設關閉，使用者在系統列選單自己開
+        self.auto_poke = bool(st.get("auto_poke", False))
+        quota_source.ALLOW_REFRESH = bool(st.get("token_refresh", False))
+        i18n.set_lang(st.get("lang", "auto"))
         style = st.get("tray_style", "burst")
         self.tray_style = style if style in _TRAY_FN else "burst"
         # 三種狀態：卡片 / 橫條 / 全部收起。同時只會有一個視窗看得見。
@@ -1213,7 +1245,7 @@ class App:
         """
         wait = quota_source.seconds_until_allowed()
         if wait > 0:
-            self.window.note(f"官方端點限流中 · {wait:.0f} 秒後才能再問一次", clear_after=4000)
+            self.window.note(t("note.rate_limited", sec=f"{wait:.0f}"), clear_after=4000)
         else:
             self._pull_api(force=True)  # 下次什麼時候再問由 _after_pull 決定
         self.root.after(0, lambda: self.refresh(force=True))
@@ -1258,19 +1290,158 @@ class App:
         self._tray_pct = object()  # 讓下一次 refresh 一定重畫圖示
         self.refresh()
 
+    def _confirm(self, title_key: str, body_key: str) -> bool:
+        """開啟會花額度或動到登入的功能前，先把它做什麼、好處與代價講清楚。
+
+        右鍵選單是 Windows 原生選單，沒辦法做滑鼠停留說明，所以改在開啟時問一次。
+        root 是隱藏的，對話框要掛在一個置頂的暫時視窗上，不然會跑到其他視窗後面。
+        """
+        holder = tk.Toplevel(self.root)
+        holder.withdraw()
+        holder.attributes("-topmost", True)
+        try:
+            return messagebox.askyesno(
+                t(title_key), f"{t(body_key)}\n\n{t('confirm.yes_hint')}",
+                icon=messagebox.WARNING, parent=holder,
+            )
+        finally:
+            holder.destroy()
+
     def toggle_auto_poke(self):
+        if not self.auto_poke and not self._confirm("confirm.auto_poke.title", "confirm.auto_poke.body"):
+            return
         self.auto_poke = not self.auto_poke
         save_state(auto_poke=self.auto_poke)
-        self.window.note(
-            f"視窗重置後自動起算：{'開' if self.auto_poke else '關'}", clear_after=5000
-        )
+        # 開啟時直接講代價，關閉時只回報狀態
+        self.window.note(t("note.auto_poke_on") if self.auto_poke else t("note.auto_poke", state=t("off")),
+                         clear_after=8000)
+
+    def toggle_token_refresh(self):
+        if not quota_source.ALLOW_REFRESH and not self._confirm("confirm.token.title", "confirm.token.body"):
+            return
+        quota_source.ALLOW_REFRESH = not quota_source.ALLOW_REFRESH
+        save_state(token_refresh=quota_source.ALLOW_REFRESH)
+        self.window.note(t("note.token_refresh_on") if quota_source.ALLOW_REFRESH
+                         else t("note.token_refresh", state=t("off")), clear_after=8000)
+        self._api_next = 0.0  # 開了之後馬上試一次，不用等下一個週期
+        self.refresh(force=True)
+
+    def show_help(self):
+        """使用說明視窗。已經開著就拉到最前面，不重複開。"""
+        win = getattr(self, "_help", None)
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            win.focus_force()
+            return
+
+        win = self._help = tk.Toplevel(self.root)
+        win.title(t("help.title"))
+        win.attributes("-topmost", True)
+        win.configure(bg="#ffffff")
+        try:
+            win.iconbitmap(default=_app_icon())
+        except tk.TclError:
+            pass
+
+        en = i18n.lang() == "en"
+        family = "Segoe UI" if en else "Microsoft JhengHei UI"
+        bold = "Segoe UI Semibold" if en else "Microsoft JhengHei UI"
+        orange = "#%02x%02x%02x" % CLAUDE_ORANGE
+        page, ink, muted, line = "#f6f6f8", "#1a1a1a", "#5c5c66", "#e6e6ea"
+
+        # ── 標題列：圖示 + 名稱 + 副標 ──
+        head = tk.Frame(win, bg="#ffffff")
+        head.pack(fill="x")
+        win._icon = ImageTk.PhotoImage(_gauge_icon(round(44 * self.dpi)))  # 留參照，不然會被回收
+        tk.Label(head, image=win._icon, bg="#ffffff").pack(side="left", padx=(22, 12), pady=16)
+        titles = tk.Frame(head, bg="#ffffff")
+        titles.pack(side="left", pady=16)
+        tk.Label(titles, text="ClaudeQuota", font=("Segoe UI Semibold", 15), fg=ink,
+                 bg="#ffffff").pack(anchor="w")
+        tk.Label(titles, text=t("help.subtitle"), font=(family, 9), fg=muted,
+                 bg="#ffffff").pack(anchor="w")
+        tk.Frame(win, bg=line, height=1).pack(fill="x")
+
+        # ── 底部：主要按鈕 ──
+        foot = tk.Frame(win, bg="#ffffff")
+        foot.pack(side="bottom", fill="x")
+        tk.Frame(win, bg=line, height=1).pack(side="bottom", fill="x")
+        close = tk.Label(foot, text=t("help.close"), font=(bold, 10), fg="#ffffff", bg=orange,
+                         padx=26, pady=6, cursor="hand2")
+        close.pack(side="right", padx=20, pady=12)
+        close.bind("<Button-1>", lambda _e: win.destroy())
+        close.bind("<Enter>", lambda _e: close.configure(bg="#c4603f"))
+        close.bind("<Leave>", lambda _e: close.configure(bg=orange))
+        win.bind("<Escape>", lambda _e: win.destroy())
+
+        # ── 內容 ──
+        body = tk.Frame(win, bg=page)
+        body.pack(fill="both", expand=True)
+        # 中文沒有空格，"word" 會找不到斷點而把整行推到下一行，所以中文逐字換行
+        text = tk.Text(body, wrap="word" if en else "char", relief="flat", bg=page, fg=ink,
+                       font=(family, 10), padx=26, pady=8, spacing1=2, spacing3=2,
+                       width=60, height=26, cursor="arrow", highlightthickness=0, borderwidth=0)
+        bar = tk.Scrollbar(body, command=text.yview)
+        text.configure(yscrollcommand=bar.set)
+        bar.pack(side="right", fill="y")
+        text.pack(side="left", fill="both", expand=True)
+
+        text.tag_configure("intro", font=(family, 10), foreground=muted, spacing3=1)
+        text.tag_configure("head", font=(bold, 11, "bold"), foreground=orange, spacing1=16, spacing3=4)
+        # 圓點固定用小號 Segoe UI（正黑體的 ● 很大），懸掛縮排用量出來的寬度，換行才會對齊文字
+        import tkinter.font as tkfont
+        dot_font = tkfont.Font(family="Segoe UI", size=7)
+        hang = 6 + dot_font.measure("●") + tkfont.Font(family=family, size=10).measure("  ")
+        text.tag_configure("bullet", lmargin1=6, lmargin2=hang, spacing3=3)
+        text.tag_configure("dot", foreground=orange, font=dot_font)
+        text.tag_configure("term", font=(bold, 10, "bold"))
+        text.tag_configure("note", foreground=muted, lmargin1=6, lmargin2=6)
+
+        seen_head = False
+        for raw in t("help.body").split("\n"):
+            if not raw.strip():
+                continue
+            if raw.startswith("■ "):
+                seen_head = True
+                text.insert("end", raw[2:] + "\n", "head")
+            elif raw.startswith("• "):
+                item = raw[2:]
+                # 「名稱：說明」把名稱加粗，掃讀時一眼看到在講哪個功能
+                sep = next((s for s in ("：", ": ") if s in item), None)
+                text.insert("end", "●", ("bullet", "dot"))
+                text.insert("end", "  ", "bullet")
+                if sep:
+                    term, desc = item.split(sep, 1)
+                    text.insert("end", term, ("bullet", "term"))
+                    text.insert("end", sep + desc + "\n", "bullet")
+                else:
+                    text.insert("end", item + "\n", "bullet")
+            else:
+                text.insert("end", raw + "\n", "note" if seen_head else "intro")
+        text.configure(state="disabled")
+        # 滾輪在整個視窗上都能捲動內容
+        win.bind("<MouseWheel>", lambda e: text.yview_scroll(int(-e.delta / 120) * 3, "units"))
+        win.update_idletasks()
+        # 放在螢幕中央
+        w, h = win.winfo_width(), win.winfo_height()
+        win.geometry(f"+{(win.winfo_screenwidth() - w) // 2}+{(win.winfo_screenheight() - h) // 2}")
+        win.focus_force()
+
+    def set_lang(self, choice: str):
+        i18n.set_lang(choice)
+        save_state(lang=choice)
+        self._tray_pct = object()  # 系統列提示文字也要換語言
+        if self.icon:
+            self.icon.update_menu()
+        self.refresh(force=True)
 
     def request_poke(self, auto: bool = False):
         if self._poking:
             return
         self._poking = True
         self._last_poke = datetime.now(timezone.utc)
-        self.window.note("自動開啟 5 小時視窗…" if auto else "正在開啟 5 小時視窗…")
+        self.window.note(t("poke.running_auto") if auto else t("poke.running"))
         threading.Thread(target=self._poke_worker, daemon=True).start()
 
     def _poke_worker(self):
@@ -1279,7 +1450,7 @@ class App:
         def done():
             self._poking = False
             # 只用中文字：微軟正黑體 Light 沒有 ✓ / ✕ 的 glyph，會畫成豆腐格
-            self.window.note(msg if ok else f"失敗 · {msg}", clear_after=6000)
+            self.window.note(msg if ok else t("poke.fail_prefix", msg=msg), clear_after=6000)
             self.refresh(force=True)
 
         self.root.after(0, done)
@@ -1342,7 +1513,7 @@ class App:
             q = quota_source.get_quota()
         except Exception as e:
             if sys.stderr:
-                print("讀取用量失敗:", e, file=sys.stderr)
+                print("get_quota failed:", e, file=sys.stderr)
             q = None
         self.window.render(q)
         self.mini.render(q)
@@ -1352,11 +1523,11 @@ class App:
             self._tray_pct = pct
             self.icon.icon = make_tray_image(pct, self.tray_style)
             if q is None:
-                self.icon.title = "Claude 用量：讀不到資料"
+                self.icon.title = t("tray.no_data")
             else:
-                week = f"／每週已用 {q.week_used:.0f}%" if q.week_used is not None else ""
-                stale = "（資料已過期）" if q.stale else ""
-                self.icon.title = f"Claude 已用 {q.percent_used:.0f}%{week}{stale}"
+                week = t("tray.week", pct=f"{q.week_used:.0f}") if q.week_used is not None else ""
+                stale = t("tray.stale") if q.stale else ""
+                self.icon.title = t("tray.used", pct=f"{q.percent_used:.0f}", week=week, stale=stale)
 
         self._maybe_auto_poke(q)
         self._start_ticker()
@@ -1381,28 +1552,46 @@ class App:
             def is_current(_item):
                 return self.tray_style == key
 
+            return pystray.MenuItem(lambda _i: t(label), choose, checked=is_current, radio=True)
+
+        def lang_item(key, label_key=None):
+            def choose():
+                self.root.after(0, lambda: self.set_lang(key))
+
+            def is_current(_item):
+                return i18n.choice() == key
+
+            label = (lambda _i: t(label_key)) if label_key else {"zh": "中文", "en": "English"}[key]
             return pystray.MenuItem(label, choose, checked=is_current, radio=True)
 
+        # 文字用 callable，切換語言後 update_menu() 就會換成新語言
         menu = pystray.Menu(
-            pystray.MenuItem("顯示／隱藏", lambda: self.root.after(0, self.toggle_visible),
+            pystray.MenuItem(lambda _i: t("menu.show"), lambda: self.root.after(0, self.toggle_visible),
                              default=True),
-            pystray.MenuItem("縮成橫條",
+            pystray.MenuItem(lambda _i: t("menu.mini"),
                              lambda: self.root.after(
                                  0, self.expand if self.minimized else self.minimize),
                              checked=lambda _i: self.minimized),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("立即重新整理", self.request_refresh),
-            pystray.MenuItem("開啟 5 小時視窗", lambda: self.root.after(0, self.request_poke)),
-            pystray.MenuItem("重置後自動起算", lambda: self.root.after(0, self.toggle_auto_poke),
+            pystray.MenuItem(lambda _i: t("menu.refresh"), self.request_refresh),
+            pystray.MenuItem(lambda _i: t("menu.poke"), lambda: self.root.after(0, self.request_poke)),
+            pystray.MenuItem(lambda _i: t("menu.auto_poke"), lambda: self.root.after(0, self.toggle_auto_poke),
                              checked=lambda _i: self.auto_poke),
-            pystray.MenuItem("移回畫面內", lambda: self.root.after(0, home)),
-            pystray.MenuItem("圖示樣式",
-                             pystray.Menu(*[style_item(k, lab) for k, lab in TRAY_STYLES])),
+            pystray.MenuItem(lambda _i: t("menu.token_refresh"),
+                             lambda: self.root.after(0, self.toggle_token_refresh),
+                             checked=lambda _i: quota_source.ALLOW_REFRESH),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("結束 ClaudeQuota", self.quit),
+            pystray.MenuItem(lambda _i: t("menu.home"), lambda: self.root.after(0, home)),
+            pystray.MenuItem(lambda _i: t("menu.style"),
+                             pystray.Menu(*[style_item(k, lab) for k, lab in TRAY_STYLES])),
+            pystray.MenuItem(lambda _i: t("menu.lang"),
+                             pystray.Menu(lang_item("auto", "lang.auto"), lang_item("zh"), lang_item("en"))),
+            pystray.MenuItem(lambda _i: t("menu.help"), lambda: self.root.after(0, self.show_help)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(lambda _i: t("menu.quit"), self.quit),
         )
         self.icon = pystray.Icon("ClaudeQuota", make_tray_image(None, self.tray_style),
-                                 "Claude 用量", menu)
+                                 t("tray.title"), menu)
         threading.Thread(target=self.icon.run, daemon=True).start()
         # 圖示註冊之後才有對應的登錄檔項目可以設定，所以延後一點再提升
         self.root.after(4000, promote_tray_icon)

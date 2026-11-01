@@ -25,6 +25,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from i18n import t
+
 WINDOW_HOURS = 5
 
 CLAUDE_CODE_PROJECTS = os.path.expanduser("~/.claude/projects")
@@ -122,6 +124,12 @@ TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 REFRESH_RETRY = 900         # 換發失敗後隔多久再試（秒）
 
+# 自己換發 token 預設關閉，由使用者在系統列選單開啟（widget 會設這個旗標）。
+# 換發會讓舊的 refresh token 失效：Claude Code 若正在執行、記憶體裡拿著舊的，
+# 它下次換發就會失敗而要求重新登入。而且這是借用 Claude Code 的 OAuth client，
+# 不是公開給第三方的介面。所以只在使用者明確選擇後才做。
+ALLOW_REFRESH = False
+
 _refresh_lock = threading.Lock()
 _refresh_muted_until = 0.0
 
@@ -171,7 +179,7 @@ def _refresh_token() -> Optional[str]:
             return None
         rexp = oauth.get("refreshTokenExpiresAt")
         if isinstance(rexp, (int, float)) and time.time() * 1000 > rexp:
-            _api_last_error = "登入已過期，請重新執行 claude 登入"
+            _api_last_error = t("api.login_expired")
             _refresh_muted_until = time.time() + REFRESH_RETRY
             return None
 
@@ -189,7 +197,7 @@ def _refresh_token() -> Optional[str]:
             access = resp["access_token"]
             expires_in = float(resp["expires_in"])
         except Exception as e:
-            _api_last_error = f"token 換發失敗：{type(e).__name__}: {e}"
+            _api_last_error = t("api.refresh_failed", e=f"{type(e).__name__}: {e}")
             _refresh_muted_until = time.time() + REFRESH_RETRY
             return None
 
@@ -208,14 +216,22 @@ def _refresh_token() -> Optional[str]:
             os.replace(tmp, CREDENTIALS)
         except OSError as e:
             # 寫不回去的話舊 refresh token 可能已經失效，至少這次的 token 還能用
-            _api_last_error = f"新 token 寫回失敗：{e}"
+            _api_last_error = t("api.write_failed", e=e)
         return access
 
 
 def _oauth_token() -> Optional[str]:
-    """讀 Claude Code 的 access token；過期就自己換發，換不到才回 None。"""
+    """讀 Claude Code 的 access token；過期時只有使用者開了換發才自己換。"""
+    global _api_last_error
     _data, oauth = _read_oauth()
-    return _valid_token(oauth) or _refresh_token()
+    token = _valid_token(oauth)
+    if token:
+        return token
+    if ALLOW_REFRESH:
+        return _refresh_token()
+    if oauth.get("accessToken"):
+        _api_last_error = t("api.token_expired")
+    return None
 
 
 def _parse_window(node) -> tuple[Optional[float], Optional[datetime]]:
@@ -236,7 +252,7 @@ def _parse_window(node) -> tuple[Optional[float], Optional[datetime]]:
 def _mute(seconds: float, why: str) -> None:
     global _api_muted_until, _api_last_error
     _api_muted_until = time.time() + seconds
-    _api_last_error = f"{why}（暫停 {seconds / 60:.0f} 分鐘）"
+    _api_last_error = t("api.paused", why=why, min=f"{seconds / 60:.0f}")
 
 
 def fetch_api_quota() -> Optional[Quota]:
@@ -247,7 +263,8 @@ def fetch_api_quota() -> Optional[Quota]:
         return None
     token = _oauth_token()
     if not token:
-        _api_last_error = "沒有可用的 OAuth token"
+        if not _api_last_error:
+            _api_last_error = t("api.no_token")
         return None
 
     req = urllib.request.Request(USAGE_API, headers={
@@ -269,9 +286,9 @@ def fetch_api_quota() -> Optional[Quota]:
                 retry = float(e.headers.get("Retry-After") or 0)
             except (TypeError, ValueError):
                 retry = 0.0
-            _mute(max(retry, _interval), f"端點速率限制，間隔調為 {int(_interval)} 秒")
+            _mute(max(retry, _interval), t("api.rate_limited", sec=int(_interval)))
         elif e.code in (401, 403):
-            _mute(900, f"憑證被拒（HTTP {e.code}）")
+            _mute(900, t("api.rejected", code=e.code))
         else:
             _mute(300, f"HTTP {e.code}")
         return None
@@ -280,11 +297,11 @@ def fetch_api_quota() -> Optional[Quota]:
         return None
 
     if not isinstance(data, dict):
-        _api_last_error = "回應格式不符"
+        _api_last_error = t("api.bad_response")
         return None
     used, resets = _parse_window(data.get("five_hour"))
     if used is None:
-        _api_last_error = "回應缺少 five_hour"
+        _api_last_error = t("api.no_five_hour")
         return None
     week_used, week_resets = _parse_window(data.get("seven_day"))
 
@@ -343,8 +360,8 @@ def api_status() -> str:
     """目前 API 這條路的狀態，給疑難排解與 UI 提示用。"""
     left = _api_muted_until - time.time()
     if left > 0:
-        return f"{_api_last_error or '暫停中'} · 還有 {left:.0f} 秒"
-    return _api_last_error or f"正常 · 每 {current_interval()} 秒更新"
+        return t("api.status_paused", err=_api_last_error or t("api.paused_default"), sec=f"{left:.0f}")
+    return _api_last_error or t("api.status_ok", sec=current_interval())
 
 
 def cached_api_quota(max_age: float = 300.0) -> Optional[Quota]:

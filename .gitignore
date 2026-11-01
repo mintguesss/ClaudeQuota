@@ -7,3 +7,8 @@ claude_logo.png
 
 __pycache__/
 *.py[cod]
+
+# PyInstaller
+build/
+dist/
+*.spec

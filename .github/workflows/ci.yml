@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install pystray pillow
+      - name: Import every module
+        run: python -c "import i18n, quota_source, widget"
+      - name: Tests
+        run: python tests/test_basics.py
