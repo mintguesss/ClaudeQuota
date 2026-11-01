@@ -40,6 +40,11 @@ STRINGS: dict[str, dict[str, str]] = {
     "left.hm": {"zh": "剩 {h} 小時 {m} 分", "en": "{h}h {m}m left"},
     "left.h": {"zh": "剩 {h} 小時", "en": "{h}h left"},
     "left.m": {"zh": "剩 {m} 分", "en": "{m}m left"},
+    "left.dh": {"zh": "剩 {d} 天 {h} 小時", "en": "{d}d {h}h left"},
+    "left.d": {"zh": "剩 {d} 天", "en": "{d}d left"},
+    "card.week_resets": {"zh": "{left} · {time} 重置", "en": "{left} · resets {time}"},
+    "weekdays": {"zh": "週一,週二,週三,週四,週五,週六,週日", "en": "Mon,Tue,Wed,Thu,Fri,Sat,Sun"},
+    "weekday_time": {"zh": "{day} {time}", "en": "{day} {time}"},
 
     # ── 迷你橫條 ──
     "mini.week": {"zh": "週", "en": "wk"},

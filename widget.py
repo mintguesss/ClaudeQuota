@@ -501,6 +501,21 @@ def human_left(delta_min: float) -> str:
     return t("left.h", h=h) if h else t("left.m", m=m)
 
 
+def human_left_long(delta_min: float) -> str:
+    """每週額度用：一天以上就講「幾天幾小時」，分鐘在這個尺度沒意義。"""
+    if delta_min < 24 * 60:
+        return human_left(delta_min)
+    d, rest = divmod(int(delta_min), 24 * 60)
+    h = rest // 60
+    return t("left.dh", d=d, h=h) if h else t("left.d", d=d)
+
+
+def weekday_time(when: datetime) -> str:
+    """「週四 14:00」/「Thu 14:00」。星期名稱自己對照，不依賴系統 locale。"""
+    local = (when + timedelta(seconds=30)).astimezone()
+    return t("weekday_time", day=t("weekdays").split(",")[local.weekday()], time=f"{local:%H:%M}")
+
+
 # ──────────────────────── 手動開啟 5 小時視窗 ────────────────────────
 
 def promote_tray_icon() -> bool:
@@ -851,10 +866,10 @@ class Painter:
 class CardPainter(Painter):
     """把一張 Quota 畫成 Windows 通知樣式的卡片。"""
 
-    W, H = 344, 182
+    W, H = 344, 208
     PAD = 16
     RADIUS = 8      # Windows 11 通知的圓角就是小小的
-    FOOT_TOP = 152  # 頁尾淡底色帶從這裡開始
+    FOOT_TOP = 178  # 頁尾淡底色帶從這裡開始（每週那列下面還有一行重置時間）
 
     # ── 一列額度 ──
     def _row(self, y, label, pct, colors, accent, sub=None):
@@ -906,7 +921,11 @@ class CardPainter(Painter):
             self._row(52, t("card.five_hour"), q.percent_used,
                       grad_for(q.percent_used), accent_for(q.percent_used), sub1)
             if q.week_used is not None:
-                self._row(118, t("card.weekly"), q.week_used, GRAD_WEEK, WEEK_ACCENT)
+                sub2 = None
+                if q.week_resets_at:
+                    wleft = (q.week_resets_at - datetime.now(timezone.utc)).total_seconds() / 60
+                    sub2 = t("card.week_resets", left=human_left_long(wleft), time=weekday_time(q.week_resets_at))
+                self._row(118, t("card.weekly"), q.week_used, GRAD_WEEK, WEEK_ACCENT, sub2)
             if q.live:
                 # 更新節奏會自我收斂、也可能被限流，每次間隔都不同，
                 # 所以直接把「上次更新多久了」秒數寫出來
@@ -1174,9 +1193,11 @@ class FloatWindow:
     def _signature(self):
         """畫面上真正看得到的東西。沒變就不用重畫（重畫要 ~34ms）。"""
         q = self._last
-        left = None
+        left = wleft = None
         if q and q.resets_at:
             left = int((q.resets_at - datetime.now(timezone.utc)).total_seconds() // 60)
+        if q and q.week_resets_at:
+            wleft = int((q.week_resets_at - datetime.now(timezone.utc)).total_seconds() // 60)
         # 「N 秒前更新」每秒都會變，但只有卡片會顯示它，橫條不需要跟著重畫
         age = None
         if q is not None and q.live and self.SHOWS_AGE:
@@ -1186,7 +1207,7 @@ class FloatWindow:
         return (
             i18n.lang(), self._hot, self._note, age,
             None if q is None else (q.percent_used, q.week_used, q.resets_exact,
-                                    q.stale, q.live, left),
+                                    q.stale, q.live, left, wleft),
         )
 
     def redraw(self, force: bool = False):

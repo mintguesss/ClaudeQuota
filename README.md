@@ -16,7 +16,7 @@ A small Windows tray app for Claude Pro / Max users. It shows the official usage
 ## Features
 
 - **Tray icon** with your 5-hour usage in 6 styles; hover for a summary
-- **Floating card** with both limits, progress bars and the exact reset time
+- **Floating card** with both limits, progress bars, and when each one resets (time left and the exact time, including the weekly reset day)
 - **Mini bar** you can dock on the taskbar, or hide everything and keep only the tray icon
 - **Put them anywhere**: drag the card and the mini bar wherever you like. Each remembers its own spot and reopens there next time
 - Stays put through Win+D and virtual desktop switches, and **gets out of the way of full-screen games and videos**
@@ -100,7 +100,7 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 ### 功能
 
 - 系統列圖示顯示 5 小時用量，有 6 種樣式可選；滑鼠停留可看摘要
-- 置頂卡片顯示兩個額度的用量、進度條與重置時間
+- 置頂卡片顯示兩個額度的用量、進度條，以及各自的重置時間（剩多久與確切時間，每週額度會標星期幾）
 - 卡片可縮成一條細橫條放在工作列上，或收起只留系統列圖示
 - **位置隨你放**：卡片和橫條都能拖到任何地方，各自記住位置，下次開啟會出現在同一個地方
 - 不受「顯示桌面」（Win+D）或切換虛擬桌面影響；全螢幕的遊戲或影片會自動讓開，結束後自己回來

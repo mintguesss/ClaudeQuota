@@ -670,6 +670,12 @@ def get_quota() -> Optional[Quota]:
     known = _known_reset()
     if known is not None and (d.resets_at is None or d.resets_at > known):
         d = replace(d, resets_at=known, resets_exact=True)
+    # 每週重置時刻桌面版快取裡沒有；API 說過的只要還沒到，整週都成立
+    with _api_lock:
+        _ts, api_q = _api_cache
+    if d.week_resets_at is None and api_q is not None and api_q.week_resets_at is not None \
+            and api_q.week_resets_at > datetime.now(timezone.utc):
+        d = replace(d, week_resets_at=api_q.week_resets_at)
     return d
 
 
