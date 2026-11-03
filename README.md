@@ -65,7 +65,7 @@ Pick one under **Icon style** in the tray menu. The colour follows your 5-hour u
 
 | Setting | What it does | Cost |
 | --- | --- | --- |
-| **Auto-start after reset** | Starts a new 5-hour window as soon as the last one ends, so your reset time comes earlier | About **1–2% of the 5-hour limit** each time (measured: one `claude -p hi`, ~30k tokens) |
+| **Auto-start after reset** | Starts a new 5-hour window as soon as the last one ends, so your reset time comes earlier | Under **1% of the 5-hour limit** each time (one `claude -p hi` on Haiku, measured on a Pro plan) |
 | **Refresh expired token** | Keeps live numbers working when Claude Code hasn't run for a while | May make a running Claude Code ask you to sign in again. Off, you just see the desktop app's cache until you open Claude Code |
 
 The app explains each one and asks before turning it on.
@@ -129,7 +129,7 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 
 | 設定 | 作用 | 代價 |
 | --- | --- | --- |
-| **重置後自動起算** | 上一個 5 小時視窗一結束就開新的，重置時間會提早 | 每次約花 **5 小時額度的 1–2%**（實測一次 `claude -p hi` 約 3 萬 token） |
+| **重置後自動起算** | 上一個 5 小時視窗一結束就開新的，重置時間會提早 | 每次花**不到 5 小時額度的 1%**（用 Haiku 跑一次 `claude -p hi`，在 Pro 方案實測） |
 | **自動換發過期 token** | Claude Code 很久沒開時也能看到即時數字 | 正在執行的 Claude Code 可能會要你重新登入。不開的話只會改顯示桌面版快取，開一次 Claude Code 就恢復 |
 
 開啟前程式會先說明並詢問；系統列選單的「**使用說明**」也會逐項解釋每個按鈕和功能。

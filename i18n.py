@@ -58,11 +58,13 @@ STRINGS: dict[str, dict[str, str]] = {
     "poke.running_auto": {"zh": "自動開啟 5 小時視窗…", "en": "Starting the 5-hour window…"},
     "poke.running": {"zh": "正在開啟 5 小時視窗…", "en": "Starting the 5-hour window…"},
     "poke.fail_prefix": {"zh": "失敗 · {msg}", "en": "Failed · {msg}"},
+    "poke.no_effect": {"zh": "自動起算沒讓視窗開始，已暫停 · 請確認 Claude Code 登入的是訂閱帳號",
+                       "en": "Auto-start didn't start a window, paused · check Claude Code uses your subscription"},
     "note.rate_limited": {"zh": "官方端點限流中 · {sec} 秒後才能再問一次",
                           "en": "Rate-limited · next check possible in {sec}s"},
     "note.auto_poke": {"zh": "視窗重置後自動起算：{state}", "en": "Auto-start after reset: {state}"},
-    "note.auto_poke_on": {"zh": "已開啟自動起算 · 每次約花 5 小時額度的 1–2%",
-                          "en": "Auto-start on · each start uses about 1–2% of the 5-hour limit"},
+    "note.auto_poke_on": {"zh": "已開啟自動起算 · 每次花不到 5 小時額度的 1%",
+                          "en": "Auto-start on · each start uses under 1% of the 5-hour limit"},
     "note.token_refresh": {"zh": "自動換發過期 token：{state}", "en": "Refresh expired token: {state}"},
     "note.token_refresh_on": {"zh": "已開啟換發 · Claude Code 執行中時可能要你重新登入",
                               "en": "Token refresh on · a running Claude Code may ask you to sign in"},
@@ -104,7 +106,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• 上一個視窗一結束就開始計時，一天內的重置時間會提早\n"
             "• 不用記得手動按閃電鍵\n\n"
             "代價\n"
-            "• 每次約花 5 小時額度的 1–2%（實測一次約 3 萬 token），即使你那段時間本來不打算用\n"
+            "• 每次花不到 5 小時額度的 1%（用最小的 Haiku 模型），即使你那段時間本來不打算用\n"
             "• 人不在電腦前時開的視窗，可能還沒用就過期了\n\n"
             "隨時可以在右鍵選單關掉。"
         ),
@@ -114,7 +116,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• The clock starts as soon as the previous window ends, so it resets earlier in your day\n"
             "• No need to remember the bolt button\n\n"
             "Cons\n"
-            "• Each start uses about 1–2% of the 5-hour limit (about 30k tokens in our test), "
+            "• Each start uses under 1% of the 5-hour limit (it runs on the small Haiku model), "
             "even if you were not going to use Claude\n"
             "• A window started while you are away may expire unused\n\n"
             "You can turn it off again from the tray menu."
@@ -171,7 +173,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "■ 右鍵選單\n"
             "• 顯示／隱藏、縮成橫條：同上\n"
             "• 立即重新整理、開啟 5 小時視窗：同卡片上的 ↻ 和 ⚡\n"
-            "• 重置後自動起算：視窗結束後自動開下一個（每次約花 1–2%，預設關閉，開啟前會說明）\n"
+            "• 重置後自動起算：視窗結束後自動開下一個（每次花不到 1%，預設關閉，開啟前會說明）\n"
             "• 自動換發過期 token：token 過期時自己換新的（有登出風險，預設關閉，開啟前會說明）\n"
             "• 移回畫面內：卡片跑到螢幕外找不到時用\n"
             "• 圖示樣式、語言：外觀設定\n\n"
@@ -204,7 +206,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "■ Tray menu\n"
             "• Show / hide, Shrink to bar: as above\n"
             "• Refresh now, Start 5-hour window: same as ↻ and ⚡ on the card\n"
-            "• Auto-start after reset: start the next window automatically (about 1–2% each time; "
+            "• Auto-start after reset: start the next window automatically (under 1% each time;"
             "off by default, explained before turning on)\n"
             "• Refresh expired token: renew an expired token itself (may sign Claude Code out; off by default, "
             "explained before turning on)\n"

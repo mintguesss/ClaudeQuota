@@ -49,6 +49,8 @@ REFRESH_SEC = 10
 # 沒有進行中的視窗時，自動打一次最小呼叫把它點著。冷卻時間要大於桌面版的
 # 5 分鐘取樣間隔，否則會在快取更新前重複觸發。
 AUTO_POKE_COOLDOWN_MIN = 12
+# 連續起算幾次視窗都沒開，就停止自動起算（避免每 12 分鐘白花一次）
+AUTO_POKE_MAX_TRIES = 2
 
 # 這個顏色會被設成透明，用來裁出圓角（tkinter 沒有原生圓角視窗）
 CHROMA = "#010203"
@@ -564,14 +566,20 @@ def poke_window() -> tuple[bool, str]:
 
     視窗是「第一次用量」才開始計時，所以想讓它從現在起算就得真的發一次請求。
     用 claude CLI 是因為它走的是訂閱額度；直接打 API 是另一套計費，不會影響額度。
+
+    環境裡有 ANTHROPIC_API_KEY（或 AUTH_TOKEN）時，`claude -p` 會優先用它，
+    請求就變成按 API 計費、完全不碰訂閱額度——視窗開不起來，還白花錢。所以子程序的
+    環境要把它們拿掉，逼 CLI 用訂閱登入。模型用 Haiku：只是要「有一次用量」，
+    用大模型只會多吃額度。
     """
     cli = find_claude_cli()
     if not cli:
         return False, t("poke.no_cli")
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
     try:
         r = subprocess.run(
-            [os.environ.get("COMSPEC", "cmd.exe"), "/c", cli, "-p", "hi"],
-            capture_output=True, timeout=180,
+            [os.environ.get("COMSPEC", "cmd.exe"), "/c", cli, "-p", "hi", "--model", "haiku"],
+            capture_output=True, timeout=180, env=env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
@@ -1286,6 +1294,8 @@ class App:
         self.icon = None
         self._poking = False
         self._last_poke: datetime | None = None
+        self._auto_tries = 0          # 這次沒有視窗以來，自動起算試了幾次
+        self._auto_gave_up = False
         self._tray_pct = object()  # 讓第一次一定會設圖示
         self._tick: str | None = None    # 目前排定的更新排程
         self._ticker: str | None = None  # 每秒跳動的「N 秒前」計時器
@@ -1409,6 +1419,7 @@ class App:
         if not self.auto_poke and not self._confirm("confirm.auto_poke.title", "confirm.auto_poke.body"):
             return
         self.auto_poke = not self.auto_poke
+        self._auto_tries, self._auto_gave_up = 0, False  # 重新開啟就重新給兩次機會
         save_state(auto_poke=self.auto_poke)
         # 開啟時直接講代價，關閉時只回報狀態
         self.window.note(t("note.auto_poke_on") if self.auto_poke else t("note.auto_poke", state=t("off")),
@@ -1559,11 +1570,23 @@ class App:
         resets_at 為 None 就代表目前沒有 5 小時視窗在跑（前一個已經過期）。
         冷卻時間必須大於桌面版 5 分鐘的取樣間隔，否則快取還沒反映就會重複觸發。
         """
-        if not self.auto_poke or self._poking or q is None or q.resets_at is not None:
+        if q is not None and q.resets_at is not None:
+            self._auto_tries = 0  # 視窗開起來了，下一次重置後可以再試
+            self._auto_gave_up = False
+            return
+        if not self.auto_poke or self._poking or q is None:
             return
         if self._last_poke and \
                 (datetime.now(timezone.utc) - self._last_poke).total_seconds() < AUTO_POKE_COOLDOWN_MIN * 60:
             return
+        # 起算過了視窗還是沒開，就是這條路對這台電腦沒用（例如 CLI 登入的不是訂閱帳號）。
+        # 不停下來的話每 12 分鐘就會再花一次，所以試兩次沒效果就停，並告訴使用者。
+        if self._auto_tries >= AUTO_POKE_MAX_TRIES:
+            if not self._auto_gave_up:
+                self._auto_gave_up = True
+                self.window.note(t("poke.no_effect"), clear_after=30000)
+            return
+        self._auto_tries += 1
         self.request_poke(auto=True)
 
     def _lift_all(self):
