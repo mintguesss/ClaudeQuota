@@ -43,6 +43,104 @@ STRINGS: dict[str, dict[str, str]] = {
     "left.dh": {"zh": "剩 {d} 天 {h} 小時", "en": "{d}d {h}h left"},
     "left.d": {"zh": "剩 {d} 天", "en": "{d}d left"},
     "card.week_resets": {"zh": "{left} · {time} 重置", "en": "{left} · resets {time}"},
+    # ── 桌面寵物 ──
+    "menu.pet": {"zh": "桌面寵物", "en": "Desktop pet"},
+    "pet.show": {"zh": "顯示寵物", "en": "Show pet"},
+    "pet.character.slime": {"zh": "史萊姆", "en": "Slime"},
+    "pet.character.cat": {"zh": "橘貓", "en": "Ginger cat"},
+    "pet.character.ghost": {"zh": "小幽靈", "en": "Little ghost"},
+    "pet.character.chick": {"zh": "小雞", "en": "Chick"},
+    "pet.character.penguin": {"zh": "企鵝", "en": "Penguin"},
+    "pet.character.robot": {"zh": "機器人", "en": "Robot"},
+    "pet.character.bunny": {"zh": "兔子", "en": "Bunny"},
+    "pet.character.frog": {"zh": "青蛙", "en": "Frog"},
+    "pet.character.bear": {"zh": "小熊", "en": "Bear"},
+    "pet.music": {"zh": "跳舞時播音樂", "en": "Play music while dancing"},
+    "menu.videos": {"zh": "等 Claude 時看短影片", "en": "Watch videos while Claude works"},
+    "videos.add": {"zh": "新增常用網站或 app…", "en": "Add a site or app…"},
+    "videos.remove": {"zh": "移除我加的", "en": "Remove one I added"},
+    "videos.add_title": {"zh": "新增常用網站或 app", "en": "Add a site or app"},
+    "videos.add_name": {"zh": "名稱（顯示在選單上）", "en": "Name (shown in the menu)"},
+    "videos.add_url": {"zh": "網址，或 app 連結（例如 spotify:）", "en": "Web address, or an app link (e.g. spotify:)"},
+    "videos.add_ok": {"zh": "加入", "en": "Add"},
+    "videos.added": {"zh": "加好了：{name}", "en": "Added: {name}"},
+    "pet.say.videos": {"zh": "去看吧！Claude 需要你的時候我會發通知叫你",
+                       "en": "Go ahead! I'll send a notification when Claude needs you"},
+    "pet.menu.state": {"zh": "改變狀態", "en": "Change state"},
+    "pet.state.auto": {"zh": "自動（跟著 Claude）", "en": "Automatic (follow Claude)"},
+    "pet.state.working": {"zh": "工作中", "en": "Working"},
+    "pet.state.waiting": {"zh": "在等你", "en": "Waiting for you"},
+    "pet.state.done": {"zh": "做完了", "en": "Done"},
+    "pet.state.error": {"zh": "出錯了", "en": "Error"},
+    "pet.state.idle": {"zh": "睡覺", "en": "Asleep"},
+    "pet.state.awake": {"zh": "醒著（自訂角色會跳舞）", "en": "Awake (custom characters dance)"},
+    "pet.hide": {"zh": "隱藏寵物", "en": "Hide the pet"},
+    "pet.menu.size": {"zh": "大小", "en": "Size"},
+    "pet.size.1.0": {"zh": "小", "en": "Small"},
+    "pet.size.1.5": {"zh": "中（1.5 倍）", "en": "Medium (1.5x)"},
+    "pet.size.2.0": {"zh": "大（2 倍）", "en": "Large (2x)"},
+    "pet.size.3.0": {"zh": "特大（3 倍）", "en": "Extra large (3x)"},
+    "menu.theme": {"zh": "主題", "en": "Theme"},
+    "theme.paper": {"zh": "遊戲紙（預設）", "en": "Game paper (default)"},
+    "theme.night": {"zh": "夜晚", "en": "Night"},
+    "theme.sakura": {"zh": "櫻花", "en": "Sakura"},
+    "theme.mint": {"zh": "薄荷", "en": "Mint"},
+    "theme.changed": {"zh": "換好主題了！", "en": "New look!"},
+    "menu.look": {"zh": "外觀與語言", "en": "Look & language"},
+    "menu.advanced": {"zh": "進階設定", "en": "Advanced"},
+    "pet.menu.character": {"zh": "角色", "en": "Character"},
+    "pet.menu.color": {"zh": "顏色", "en": "Color"},
+    "pet.menu.placement": {"zh": "位置", "en": "Where it lives"},
+    "pet.color.default": {"zh": "角色原本的顏色", "en": "The character's own color"},
+    "pet.color.pink": {"zh": "粉紅", "en": "Pink"},
+    "pet.color.blue": {"zh": "天藍", "en": "Blue"},
+    "pet.color.purple": {"zh": "薰衣草紫", "en": "Lavender"},
+    "pet.color.yellow": {"zh": "奶油黃", "en": "Butter yellow"},
+    "pet.color.mint": {"zh": "薄荷綠", "en": "Mint"},
+    "pet.color.gray": {"zh": "灰色", "en": "Gray"},
+    "pet.wake": {"zh": "叫醒（陪你一下）", "en": "Wake up (hang out for a bit)"},
+    "pet.custom_open": {"zh": "自訂角色…（打開資料夾）", "en": "Custom character… (open folder)"},
+    "pet.say.wake": {"zh": "醒來囉！陪你一下～", "en": "I'm up! I'll hang out with you for a bit"},
+    "pet.say.awake": {"zh": "醒著！目前沒有進行中的工作", "en": "Awake! Nothing's running right now"},
+    "pet.say.hello": {"zh": "嗨，我是{name}！", "en": "Hi, I'm {name}!"},
+    "pet.say.custom": {"zh": "在資料夾裡開一個子資料夾、放進你的圖，就能從「角色」選單選它。命名方式看 README.txt",
+                       "en": "Make a subfolder there with your images, then pick it under Character. README.txt explains the file names"},
+    "pet.placement.mini": {"zh": "坐在迷你橫條上", "en": "Sit on the mini bar"},
+    "pet.placement.walk": {"zh": "在工作列上方散步", "en": "Walk along the top of the taskbar"},
+    "pet.placement.inbar": {"zh": "在工作列裡散步（縮小）", "en": "Walk inside the taskbar (smaller)"},
+    "pet.placement.free": {"zh": "自由擺放（可拖曳）", "en": "Anywhere (drag it)"},
+    "pet.hook": {"zh": "寵物：準確偵測「在等你允許」（安裝 hook）", "en": "Pet: detect permission prompts exactly (install hook)"},
+    "pet.hook_on": {"zh": "已安裝 hook。Claude 需要你允許時我會馬上知道！",
+                    "en": "Hook installed. I'll know right away when Claude needs your permission!"},
+    "pet.hook_off": {"zh": "已移除 hook，改回用猜的。", "en": "Hook removed. Back to guessing."},
+    "pet.hook_failed": {"zh": "改不了 Claude Code 設定：{e}", "en": "Could not change Claude Code settings: {e}"},
+    "pet.say.working": {"zh": "{who} 工作中", "en": "{who} is working"},
+    "pet.say.for": {"zh": "，已經 {min} 分鐘", "en": " ({min} min so far)"},
+    "pet.say.waiting": {"zh": "{who} 在等你按允許！", "en": "{who} needs your permission!"},
+    "pet.say.waiting_guess": {"zh": "{who} 好像在等你按允許？", "en": "{who} may be waiting for your permission?"},
+    "pet.say.done": {"zh": "{who} 做完了！", "en": "{who} is done!"},
+    "pet.say.error": {"zh": "{who} 出錯了…", "en": "{who} hit an error…"},
+    "pet.say.idle": {"zh": "沒有進行中的工作，睡個覺", "en": "Nothing running. Nap time"},
+    "pet.say.others": {"zh": "（另外還有 {n} 個對話在跑）", "en": " (+{n} more running)"},
+    "confirm.pet_hook.title": {"zh": "安裝 Claude Code hook？", "en": "Install a Claude Code hook?"},
+    "confirm.pet_hook.body": {
+        "zh": "對話紀錄看不出 Claude 是不是卡在「允許／拒絕」提示，所以寵物只能用猜的"
+              "（工具送出後 20 秒沒結果就當作在等你，跑很久的指令也會被猜錯）。\n\n"
+              "安裝後會在 ~/.claude/settings.json 加一個 Notification hook："
+              "Claude Code 需要你允許時，會跑一支小 PowerShell 腳本把通知存成檔案給寵物讀。\n\n"
+              "• 好處：「在等你」變準確，馬上就知道\n"
+              "• 代價：每次通知多跑一下 PowerShell（約半秒，不影響 Claude）；"
+              "會改到你的 Claude Code 設定（第一次改之前會留 settings.json.claudequota.bak 備份）\n"
+              "• 隨時可以在同一個選項移除，只會拿掉這一條，其他設定不動",
+        "en": "The transcripts don't show whether Claude is stuck on an allow/deny prompt, so the pet has to guess "
+              "(a tool call with no result after 20 seconds counts as waiting; long-running commands fool it).\n\n"
+              "This adds a Notification hook to ~/.claude/settings.json: when Claude Code needs your permission it "
+              "runs a tiny PowerShell script that saves the notification to a file for the pet.\n\n"
+              "• Upside: \"waiting for you\" becomes exact and instant\n"
+              "• Cost: PowerShell runs for about half a second per notification (Claude isn't slowed); your Claude "
+              "Code settings are changed (a settings.json.claudequota.bak backup is kept before the first change)\n"
+              "• Remove it any time from the same menu item; only this one entry is taken out",
+    },
     "pace.plenty": {"zh": "照這個進度，重置時還會剩不少", "en": "At this pace you'll have plenty left at reset"},
     "pace.on_track": {"zh": "照這個進度，剛好夠用到重置", "en": "At this pace you'll just about last until reset"},
     "pace.short": {"zh": "照這個進度，約 {time} 會用完", "en": "At this pace you'll run out around {time}"},
@@ -101,7 +199,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "menu.help": {"zh": "使用說明", "en": "Help"},
 
     # ── 開啟前確認 ──
-    "confirm.yes_hint": {"zh": "要開啟嗎？", "en": "Turn it on?"},
+    "confirm.enable": {"zh": "開啟", "en": "Turn on"},
+    "confirm.cancel": {"zh": "先不要", "en": "Not now"},
     "confirm.auto_poke.title": {"zh": "重置後自動起算", "en": "Auto-start after reset"},
     "confirm.auto_poke.body": {
         "zh": (
@@ -167,7 +266,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "數字都是官方的，取不到就顯示「讀不到額度資料」，不會自己估。\n"
             "查的是 Claude Code（含 VS Code 擴充功能）登入的帳號；桌面版登入別的帳號不影響。\n\n"
             "■ 系統列圖示\n"
-            "• 圖示顯示 5 小時額度的用量，有 6 種樣式，可在右鍵選單的「圖示樣式」切換\n"
+            "• 圖示顯示 5 小時額度的用量，有 6 種樣式，在右鍵選單「外觀與語言 → 圖示樣式」切換\n"
             "• 左鍵：顯示或收起卡片\n"
             "• 右鍵：打開選單\n\n"
             "■ 卡片右上角的按鈕\n"
@@ -177,12 +276,27 @@ STRINGS: dict[str, dict[str, str]] = {
             "• ✕ 收起：只是藏起來，程式還在系統列執行\n"
             "卡片和橫條都可以用滑鼠拖到任何位置。\n\n"
             "■ 右鍵選單\n"
-            "• 顯示／隱藏、縮成橫條：同上\n"
-            "• 立即重新整理、開啟 5 小時視窗：同卡片上的 ↻ 和 ⚡\n"
-            "• 重置後自動起算：視窗結束後自動開下一個（每次花不到 1%，預設關閉，開啟前會說明）\n"
-            "• 自動換發過期 token：token 過期時自己換新的（有登出風險，預設關閉，開啟前會說明）\n"
-            "• 移回畫面內：卡片跑到螢幕外找不到時用\n"
-            "• 圖示樣式、語言：外觀設定\n\n"
+            "• 最上面：顯示／隱藏、縮成橫條、立即重新整理、開啟 5 小時視窗（同卡片上的按鈕）\n"
+            "• 桌面寵物：見下一節\n"
+            "• 外觀與語言：圖示樣式、語言，以及「移回畫面內」（卡片跑到螢幕外找不到時用）\n"
+            "• 等 Claude 時看短影片：打開 YouTube Shorts、Instagram Reels 或 YouTube；"
+            "之後兩小時內 Claude 需要你，會發 Windows 通知叫你回來\n"
+            "• 進階設定：三個預設關閉、開啟前都會先說明的功能\n"
+            "  – 重置後自動起算：視窗結束後自動開下一個（每次花不到 1%）\n"
+            "  – 自動換發過期 token：token 過期時自己換新的（有讓 Claude Code 登出的風險）\n"
+            "  – 寵物準確偵測「在等你允許」：在 Claude Code 設定裝一個 hook\n\n"
+            "■ 桌面寵物\n"
+            "• 一隻跟著 Claude Code 狀態變表情的小東西：工作中、在等你允許（冒驚嘆號）、"
+            "做完了（冒星星）、出錯了（頭上有烏雲）、沒事時睡覺。CLI、VS Code、桌面版的 Code 分頁都看得到\n"
+            "• 點一下：跳出對話框說明哪個專案在做什麼，再點對話框就關掉。在等你、做完、出錯時會自己冒出來講\n"
+            "• 睡著時點一下會叫醒它；哪種模式都可以拖到別的地方\n"
+            "• 在寵物身上按右鍵：叫醒（任何時候都行）、手動改變狀態（或設回自動）、音樂開關、大小、隱藏\n"
+            "• 右鍵選單「桌面寵物」：開關、叫醒、換角色（9 種）、換顏色（每個角色各記各的）、"
+            "換位置（坐在橫條上／工作列上方散步／工作列裡散步／自由擺放）\n"
+            "• 自訂角色：「角色 → 自訂角色…」打開資料夾，放進你自己的圖（命名方式見裡面的 README.txt）\n"
+            "• 跳舞時播音樂：自訂角色有設定音樂時才會出現，可以關掉\n"
+            "• 「在等你允許」預設是用猜的（工具送出 20 秒沒結果），跑很久的指令會猜錯；"
+            "「進階設定」裡可以裝 Claude Code hook 讓它變準（開啟前會說明）\n\n"
             "■ 卡片底部的小字\n"
             "• 即時官方數字 · N 秒前更新：直接向官方查到的\n"
             "• 桌面版快取：查不到時改讀 Claude 桌面版存的紀錄，最多落後 5 分鐘\n"
@@ -203,7 +317,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "It reads the account Claude Code (including the VS Code extension) is signed in to; "
             "the desktop app being on another account doesn't matter.\n\n"
             "■ Tray icon\n"
-            "• The icon shows your 5-hour usage; pick one of 6 styles under Icon style in the menu\n"
+            "• The icon shows your 5-hour usage; pick one of 6 styles under Look & language > Icon style\n"
             "• Left-click: show or hide the card\n"
             "• Right-click: open the menu\n\n"
             "■ Card buttons (top right)\n"
@@ -213,14 +327,32 @@ STRINGS: dict[str, dict[str, str]] = {
             "• ✕ Hide: only hides the card; the app keeps running in the tray\n"
             "Drag the card or the bar anywhere.\n\n"
             "■ Tray menu\n"
-            "• Show / hide, Shrink to bar: as above\n"
-            "• Refresh now, Start 5-hour window: same as ↻ and ⚡ on the card\n"
-            "• Auto-start after reset: start the next window automatically (under 1% each time;"
-            "off by default, explained before turning on)\n"
-            "• Refresh expired token: renew an expired token itself (may sign Claude Code out; off by default, "
-            "explained before turning on)\n"
-            "• Move back on screen: if the card ended up off-screen\n"
-            "• Icon style, Language: appearance\n\n"
+            "• At the top: Show / hide, Shrink to bar, Refresh now, Start 5-hour window (same as the card buttons)\n"
+            "• Desktop pet: see the next section\n"
+            "• Look & language: icon style, language, and Move back on screen (if the card ended up off-screen)\n"
+            "• Watch videos while Claude works: opens YouTube Shorts, Instagram Reels or YouTube; for the next "
+            "two hours you get a Windows notification when Claude needs you\n"
+            "• Advanced: three things that are off by default and explained before turning on\n"
+            "  – Auto-start after reset: start the next window automatically (under 1% each time)\n"
+            "  – Refresh expired token: renew an expired token itself (may sign Claude Code out)\n"
+            "  – Pet: detect permission prompts exactly, by installing a Claude Code hook\n\n"
+            "■ Desktop pet\n"
+            "• A little creature that reacts to Claude Code: working, waiting for your permission (a \"!\"), "
+            "done (sparkles), error (a rain cloud), and asleep when nothing's running. Sees the CLI, VS Code and "
+            "the desktop app's Code tab\n"
+            "• Click it for a dialog saying which project is doing what; click the dialog to close it. It speaks "
+            "up by itself when Claude is waiting, done or hits an error\n"
+            "• Click it while it sleeps to wake it up; drag it anywhere in any mode\n"
+            "• Right-click the pet: wake it up (any time), set its state by hand (or back to automatic), music "
+            "on/off, size, hide\n"
+            "• Desktop pet in the tray menu: on/off, wake up, character (9), color (remembered per character), "
+            "and where it lives (on the mini bar, along the top of the taskbar, inside the taskbar, or anywhere)\n"
+            "• Your own character: Character > Custom character… opens a folder for your images (README.txt "
+            "inside explains the file names)\n"
+            "• Play music while dancing: shows up when a custom character comes with music; turn it off any time\n"
+            "• \"Waiting for permission\" is a guess by default (a tool call with no result for 20 seconds), so "
+            "long-running commands can fool it; install the Claude Code hook under Advanced to make it exact "
+            "(explained before it's installed)\n\n"
             "■ The small text at the bottom of the card\n"
             "• Live official numbers · updated Ns ago: fetched from the official endpoint\n"
             "• Desktop cache: the Claude desktop app's saved data, up to 5 minutes old\n"

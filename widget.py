@@ -23,12 +23,14 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox
 from datetime import datetime, timedelta, timezone
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
+import claude_state
+import fancymenu
 import i18n
+import pet
 import quota_source
 from i18n import t
 
@@ -221,6 +223,25 @@ def taskbar_slot(sw: int, sh: int, w: int, h: int) -> tuple[int, int]:
     except Exception:
         pass
     return 35, max(0, sh - h - 14)
+
+
+def taskbar_height(sh: int) -> int | None:
+    """工作列的高度；工作列不在底下或量不到就 None。"""
+    top = taskbar_top(sh)
+    return sh - top if top < sh else None
+
+
+def taskbar_top(sh: int) -> int:
+    """工作列上緣的 y。工作列不在底下或自動隱藏時，就當作螢幕底邊。"""
+    try:
+        u = _u32()
+        tray = u.FindWindowW("Shell_TrayWnd", None)
+        bar = RECT()
+        if tray and u.GetWindowRect(tray, ctypes.byref(bar)) and bar.top > sh // 2 and bar.top < sh:
+            return bar.top
+    except Exception:
+        pass
+    return sh
 
 
 # ────────────────── 讓浮動視窗待得住（但該讓的時候讓開） ──────────────────
@@ -1295,7 +1316,624 @@ class MiniWindow(FloatWindow):
             self.on_click()
 
 
+# ──────────────────────────────── 桌面寵物 ────────────────────────────────
+
+CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
+PET_POLL_MS = 2000      # 多久看一次 Claude Code 的狀態
+PET_BUBBLE_MS = 7000
+PET_AWAKE_SEC = 90      # 叫醒之後醒著多久才又睡回去
+PET_SIZES = (1.0, 1.5, 2.0, 3.0)
+WATCH_SEC = 2 * 3600    # 打開短影片後多久內，Claude 需要你時改發 Windows 通知
+VIDEO_SITES = (  # (名稱, 網址)：名稱是品牌名，不翻譯
+    ("YouTube Shorts", "https://www.youtube.com/shorts"),
+    ("Instagram Reels", "https://www.instagram.com/reels/"),
+    ("TikTok", "https://www.tiktok.com/"),
+    ("YouTube", "https://www.youtube.com/"),
+    ("Netflix", "https://www.netflix.com/"),
+    ("Disney+", "https://www.disneyplus.com/"),
+    ("Twitch", "https://www.twitch.tv/"),
+    ("Bilibili", "https://www.bilibili.com/"),
+    ("Facebook Reels", "https://www.facebook.com/reel/"),
+)
+THEMES_FILE = os.path.join(DATA_DIR, "pets", "themes.json")  # 自訂主題（跟自訂角色放一起，不進版本控制）
+TYPE_MS = 28            # 對話框打字機效果，每格出幾個字的間隔
+CHROMA_RGB = tuple(int(CHROMA[i:i + 2], 16) for i in (1, 3, 5))
+
+
+class _PetPainter:
+    """寵物的畫在 PetWindow 裡逐格處理；這裡只提供 FloatWindow 要的尺寸與按鈕。"""
+
+    def __init__(self, dpi: float):
+        self.pw = self.ph = round(pet.S * dpi)
+        self.buttons = []
+
+
+class Bubble:
+    """遊戲風對話框：打字機效果一個字一個字出來，點一下就關掉。"""
+
+    def __init__(self, root: tk.Tk, dpi: float):
+        self.root, self.dpi = root, dpi
+        self.win: tk.Toplevel | None = None
+        self.text = self.name = ""
+        self._shown = 0
+        self._tail: int | None = None
+        self._jobs: list[str] = []
+
+    @property
+    def open(self) -> bool:
+        return self.win is not None
+
+    def show(self, text: str, name: str, ms: int, anchor):
+        """anchor() 回傳寵物中心 x 與頭頂 y，對話框放在它上面，尾巴指向它。"""
+        self.close()
+        self.text, self.name, self._shown = text, name, 0
+        self._anchor = anchor
+        w = tk.Toplevel(self.root)
+        w.overrideredirect(True)
+        w.attributes("-topmost", True)
+        try:
+            w.attributes("-transparentcolor", CHROMA)
+        except tk.TclError:
+            pass
+        self.label = tk.Label(w, bd=0, bg=CHROMA, cursor="hand2")
+        self.label.pack()
+        self.label.bind("<Button-1>", lambda _e: self.close())
+        self.win = w
+        make_tool_window(window_handle(w))
+        self.place()
+        self._type()
+        self._jobs.append(self.root.after(ms, self.close))
+
+    def place(self):
+        if self.win is None:
+            return
+        _lines, bw, bh = pet.bubble_layout(self.text, self.dpi)
+        x0, y0, x1, y1 = self._anchor()          # 寵物視窗的範圍：對話框不能蓋到它
+        cx = (x0 + x1) // 2
+        sw = self.root.winfo_screenwidth()
+        x = max(4, min(cx - bw // 2, sw - bw - 4))
+        y = y0 - bh - round(2 * self.dpi)
+        tail = cx - x
+        if y < 4:  # 上面放不下（寵物靠螢幕上緣）：改放旁邊，尾巴就不指了
+            x, y = fancymenu.clear_of(self.root, (x0, y0, x1, y1), x, max(4, y), bw, bh, round(6 * self.dpi))
+            tail = -9999
+        if tail != self._tail:
+            self._tail = tail
+            self._paint()
+        self.win.geometry(f"{bw}x{bh}+{x}+{y}")
+
+    def _paint(self):
+        done = self._shown >= len(self.text)
+        img = pet.bubble_image(self.text, self.name, self._shown, done, self.dpi, CHROMA_RGB, self._tail,
+                               fancymenu.theme())
+        self._photo = ImageTk.PhotoImage(img)
+        self.label.configure(image=self._photo)
+
+    def _type(self):
+        if self.win is None:
+            return
+        if self._shown < len(self.text):
+            self._shown = min(len(self.text), self._shown + 2)
+            self._paint()
+            self._jobs.append(self.root.after(TYPE_MS, self._type))
+
+    def close(self):
+        for job in self._jobs:
+            try:
+                self.root.after_cancel(job)
+            except tk.TclError:
+                pass
+        self._jobs.clear()
+        if self.win is not None:
+            try:
+                self.win.destroy()
+            except tk.TclError:
+                pass
+        self.win = None
+        self._tail = None
+
+
+class PetWindow(FloatWindow):
+    """跟著 Claude Code 狀態變表情的寵物。
+
+    三種位置：坐在迷你橫條上（橫條收起時改坐在工作列右邊）、在工作列上散步、
+    自由擺放。哪種模式都能拖：拖到哪就待在哪（坐在橫條上的會改成自由擺放、
+    散步的會從放下的地方繼續走）。點一下會冒出對話框；睡著時點一下會叫醒它。
+    """
+
+    STATE = "pet_"
+
+    def __init__(self, root, dpi, mini: FloatWindow):
+        self.mini = mini
+        st = load_state()
+        self.character = st.get("pet_char", "slime")
+        if not isinstance(self.character, str):
+            self.character = "slime"
+        colors = st.get("pet_colors")
+        self._colors = colors if isinstance(colors, dict) else {}
+        self.placement = st.get("pet_place", "mini") if st.get("pet_place") in pet.PLACEMENTS else "mini"
+        size = st.get("pet_size", 1.0)
+        self.size = size if size in PET_SIZES else 1.0  # 建立視窗時算預設位置就會用到
+        super().__init__(root, dpi, _PetPainter(dpi), self._free_default)
+        self.state = claude_state.State("idle")
+        self._f = 0
+        self._dir = 1
+        self._walk_x: float | None = None
+        self._frames: dict = {}
+        self._anim: str | None = None
+        self._poll: str | None = None
+        self._hook_file: str | None = None
+        self._hook_checked = 0.0
+        self._awake_until = 0.0
+        self._held = False
+        self._since = time.time()      # 目前顯示的狀態從什麼時候開始（自訂角色照它算第幾格）
+        self._shown_kind = ""
+        self._pil: dict = {}           # 背景準備好的自訂角色圖
+        self._preparing: set = set()
+        self.music_on = bool(st.get("pet_music", True))
+        self._music_for = None
+        self.on_alert = None           # Claude 需要你時通知外面（例如發 Windows 通知）
+        self.bubble = Bubble(root, dpi)
+        self.forced: str | None = None  # 右鍵選單手動指定的狀態
+        self.label.bind("<Button-3>", self._context)
+        if not st.get("pet_on", True):
+            self.hide()
+
+    # ── 角色與外觀 ──
+    @property
+    def custom(self) -> str | None:
+        """自訂角色的資料夾；內建角色回 None。"""
+        if self.character.startswith("custom:"):
+            folder = os.path.join(pet.custom_root(DATA_DIR), self.character[7:])
+            return folder if os.path.isdir(folder) else None
+        return None
+
+    def display_name(self) -> str:
+        if self.character.startswith("custom:"):
+            return self.character[7:]
+        return t(f"pet.character.{self.character}")
+
+    @property
+    def color(self) -> str:
+        """每個角色各記各的顏色：把史萊姆換成藍色，換成小雞時還是黃色的小雞。"""
+        c = self._colors.get(self.character, "default")
+        return c if c in pet.COLORS else "default"
+
+    def set_character(self, character: str):
+        self.character = character
+        self._music_for = None
+        folder = self.custom
+        if folder:
+            self._prepare(folder, self.scale, False, first=self.shown_state())
+        save_state(pet_char=character)
+        self.say(t("pet.say.hello", name=self.display_name()), 4000)
+
+    def set_color(self, color: str):
+        self._colors[self.character] = color
+        save_state(pet_colors=self._colors)
+
+    # ── 大小與位置 ──
+    @property
+    def scale(self) -> float:
+        """平常照螢幕縮放；在工作列裡散步時縮到剛好塞進工作列的高度。"""
+        if self.placement == "inbar":
+            bar = taskbar_height(self.root.winfo_screenheight())
+            if bar:
+                return bar / pet.S
+        return self.dpi * self.size
+
+    def set_size(self, size: float):
+        self.size = size
+        save_state(pet_size=size)
+        self._resize()
+
+    def _resize(self):
+        size = round(pet.S * self.scale)
+        if size != self.W:
+            self.W = self.H = size
+            self.win.geometry(f"{size}x{size}")
+
+    def _free_default(self, sw, sh, w, h):
+        return sw - w - round(240 * self.dpi), taskbar_top(sh) - round(pet.FEET * self.scale)
+
+    def _anchor(self) -> tuple[int, int] | None:
+        """mini / walk 模式該站的位置；free 模式回 None（由使用者拖）。"""
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        feet = round(pet.FEET * self.scale)
+        if self.placement == "mini":
+            m = self.mini
+            if m.visible and not m._suspended:
+                x = m.win.winfo_x() + m.W - self.W - round(4 * self.dpi)
+                return x, m.win.winfo_y() - feet + round(3 * self.dpi)
+            return self._free_default(sw, sh, self.W, self.H)
+        if self.placement in ("walk", "inbar"):
+            if self._walk_x is None:
+                self._walk_x = float(self._free_default(sw, sh, self.W, self.H)[0])
+            speed = {"working": 1.4, "awake": 0.8}.get(self.shown_state(), 0) * self.dpi
+            self._walk_x += speed * self._dir
+            if self._walk_x <= 0 or self._walk_x >= sw - self.W:
+                self._dir = -self._dir
+                self._walk_x = max(0.0, min(self._walk_x, sw - self.W))
+            if self.placement == "inbar":
+                return round(self._walk_x), taskbar_top(sh)
+            return round(self._walk_x), taskbar_top(sh) - feet
+        return None
+
+    def set_placement(self, placement: str):
+        self.placement = placement
+        self._walk_x = None
+        save_state(pet_place=placement)
+        self._resize()
+        if placement == "free":
+            x, y = self._clamp(*self._default())
+            self.win.geometry(f"+{x}+{y}")
+
+    def reset_position(self):
+        self._walk_x = None
+        super().reset_position()
+
+    def _head(self) -> tuple[int, int, int, int]:
+        """寵物視窗在螢幕上的範圍。對話框和右鍵選單都要避開它，不要蓋到角色。"""
+        x, y = self.win.winfo_x(), self.win.winfo_y()
+        return x, y, x + self.W, y + self.H
+
+    # ── 滑鼠 ──
+    def _click(self, e):
+        self._start_drag(e)
+
+    def _on_drag(self, e):
+        if not self._drag:
+            return
+        x, y = self._clamp(e.x_root - self._drag[0], e.y_root - self._drag[1])
+        if not self._moved and abs(x - self.win.winfo_x()) + abs(y - self.win.winfo_y()) < 4:
+            return  # 手抖不算拖
+        self._moved = True
+        self._held = True
+        self.win.geometry(f"+{x}+{y}")
+        self.bubble.place()
+
+    def _end_drag(self, e):
+        if not self._drag:
+            return
+        moved, self._drag, self._held = self._moved, None, False
+        if not moved:
+            self._tap()
+            return
+        x, y = self._clamp(self.win.winfo_x(), self.win.winfo_y())
+        if self.placement in ("walk", "inbar"):
+            self._walk_x = float(x)  # 從放下的地方繼續走（會落回工作列）
+        else:
+            if self.placement == "mini":
+                self.placement = "free"
+                save_state(pet_place="free")
+            self._save_pos(x, y)
+
+    def _tap(self):
+        """點一下：開著對話框就關掉；睡著就叫醒；不然說明現在的狀態。"""
+        if self.bubble.open:
+            self.bubble.close()
+        elif self.shown_state() == "idle":
+            self.wake()
+        else:
+            self.say(self.describe(), PET_BUBBLE_MS)
+
+    def _hover(self, e):
+        pass
+
+    # ── 狀態 ──
+    def wake(self):
+        """叫醒：不管 Claude 在做什麼，都醒來陪你一陣子（自訂角色會跳舞、放歌）。"""
+        self._awake_until = time.time() + PET_AWAKE_SEC
+        self._f = 0
+        self.say(t("pet.say.wake"), PET_BUBBLE_MS)
+
+    def set_forced(self, kind: str | None):
+        """手動固定成某個狀態；None 回到自動跟著 Claude。"""
+        self.forced = kind
+        self._awake_until = 0.0
+        self._f = 0
+
+    def shown_state(self) -> str:
+        """畫面上要演哪個狀態。順序：被拎著 > Claude 在等你 > 手動指定 > 被叫醒 > 跟著 Claude。"""
+        if self._held:
+            return "held"
+        if self.state.kind == "waiting":  # 需要你的時候一定要讓你看到
+            return "waiting"
+        if self.forced:
+            return self.forced
+        if time.time() < self._awake_until:
+            return "awake"
+        return self.state.kind
+
+    # ── 右鍵選單（寵物身上，系統列的「桌面寵物」也用同一份） ──
+    def _context(self, e):
+        x0, y0, x1, y1 = self._head()
+        fancymenu.popup(self.root, self.dpi, self.menu_items(), x1 + round(6 * self.dpi), y0,
+                        title=self.display_name(), avoid=(x0, y0, x1, y1))
+
+    def menu_items(self, tray: bool = False) -> list:
+        def radio(label, current, command):
+            return {"label": label, "checked": current, "radio": True, "command": command}
+
+        def characters():
+            items = [radio(t(f"pet.character.{k}"), self.character == k, lambda k=k: self.set_character(k))
+                     for k in pet.CHARACTERS]
+            custom = pet.custom_characters(DATA_DIR)  # 每次打開都重新掃，放了新圖不用重開程式
+            if custom:
+                items.append("-")
+                items += [radio(n, self.character == f"custom:{n}", lambda n=n: self.set_character(f"custom:{n}"))
+                          for n in custom]
+            items += ["-", {"label": t("pet.custom_open"), "command": self.open_folder}]
+            return items
+
+        items = []
+        if tray:
+            items += [{"label": t("pet.show"), "checked": self.visible, "command": self.toggle}, "-"]
+        items += [
+            {"label": t("pet.wake"), "command": self.wake, "enabled": self.visible},
+            {"label": t("pet.menu.state"), "submenu": [
+                radio(t("pet.state.auto"), self.forced is None, lambda: self.set_forced(None)), "-",
+                *[radio(t(f"pet.state.{k}"), self.forced == k, lambda k=k: self.set_forced(k))
+                  for k in ("working", "waiting", "done", "error", "idle", "awake")]]},
+        ]
+        if self.has_music():
+            items.append({"label": t("pet.music"), "checked": self.music_on,
+                          "command": lambda: self.set_music(not self.music_on)})
+        items += [
+            "-",
+            {"label": t("pet.menu.character"), "submenu": characters},
+            {"label": t("pet.menu.color"), "enabled": self.custom is None, "submenu": [
+                radio(t(f"pet.color.{k}"), self.color == k, lambda k=k: self.set_color(k)) for k in pet.COLORS]},
+            {"label": t("pet.menu.size"), "enabled": self.placement != "inbar", "submenu": [
+                radio(t(f"pet.size.{k}"), self.size == k, lambda k=k: self.set_size(k)) for k in PET_SIZES]},
+            {"label": t("pet.menu.placement"), "submenu": [
+                radio(t(f"pet.placement.{k}"), self.placement == k, lambda k=k: self.set_placement(k))
+                for k in pet.PLACEMENTS]},
+        ]
+        if not tray:
+            items += ["-", {"label": t("pet.hide"), "command": self.hide}]
+        return items
+
+    def describe(self) -> str:
+        s = self.state
+        who = s.project or "Claude"
+        kind = s.kind
+        if kind == "idle" and self.shown_state() in ("awake", "held"):
+            return t("pet.say.awake")
+        if kind == "working":
+            mins = max(0, int((time.time() - s.since) // 60))
+            text = t("pet.say.working", who=who) + (t("pet.say.for", min=mins) if mins else "")
+        elif kind == "waiting":
+            text = t("pet.say.waiting_guess" if s.guessed else "pet.say.waiting", who=who)
+        else:
+            text = t(f"pet.say.{kind}", who=who)
+        if s.others:
+            text += t("pet.say.others", n=s.others)
+        return text
+
+    def _check_hook(self):
+        now = time.time()
+        if now - self._hook_checked > 10:
+            self._hook_checked = now
+            installed = pet.hook_installed(CLAUDE_SETTINGS)
+            self._hook_file = pet.hook_paths(DATA_DIR)[1] if installed else None
+
+    def poll(self):
+        """定期看一次 Claude Code 在做什麼；狀態變了就換動畫，重要的變化冒對話框。"""
+        self._poll = None
+        if not self.visible:
+            return
+        self._check_hook()
+        try:
+            new = claude_state.current(self._hook_file)
+        except Exception as e:
+            if sys.stderr:
+                print("claude_state failed:", e, file=sys.stderr)
+            new = claude_state.State("idle")
+        old = self.state
+        self.state = new
+        if new.kind != old.kind:
+            self._f = 0
+            if new.kind in ("waiting", "done", "error"):
+                self.say(self.describe(), PET_BUBBLE_MS * (2 if new.kind == "waiting" else 1))
+                if self.on_alert:
+                    self.on_alert(self.describe())
+        self._poll = self.root.after(PET_POLL_MS, self.poll)
+
+    def start(self):
+        folder = self.custom
+        if folder:  # 一開始就在背景把圖準備好，換狀態時不用等
+            self._prepare(folder, self.scale, False, first=self.shown_state())
+        if self._poll is None:
+            self.poll()
+        if self._anim is None:
+            self._step()
+
+    def _frame(self, kind: str, flip: bool):
+        """這一刻該顯示的圖；自訂角色還沒準備好就回 None（畫面先停在上一格）。"""
+        scale = self.scale
+        folder = self.custom
+        if folder:
+            return self._custom_photo(folder, kind, scale, flip)
+        key = (self.character, self.color, scale, kind, self._f, flip)
+        photo = self._frames.get(key)
+        if photo is None:
+            name = self.character if self.character in pet.CHARACTERS else "slime"
+            img = pet.frame(name, kind, self._f, scale, CHROMA_RGB, flip, self.color)
+            if len(self._frames) > 1500:
+                self._frames.clear()
+            photo = self._frames[key] = ImageTk.PhotoImage(img)
+        return photo
+
+    # ── 自訂角色：照時間決定播哪一格，圖在背景先準備好 ──
+    #
+    # 真人影片做的角色一個狀態就有幾百張圖。以前是播到哪張才讀檔、縮放，一張要幾十毫秒，
+    # 於是每秒 24 格實際只播得出十幾格，看起來像慢動作。現在：
+    #   1. 播第幾格由「這個狀態開始到現在幾秒」乘上 fps 決定，慢了就跳格，速度永遠正確
+    #   2. 讀檔和縮放都在背景執行緒做完，畫面執行緒只把現成的圖轉成 PhotoImage
+    def _custom_photo(self, folder: str, kind: str, scale: float, flip: bool):
+        n = pet.custom_count(folder, kind)
+        idx = int((time.time() - self._since) * pet.custom_fps(folder)) % n
+        base = (self.character, scale, kind, flip)
+        imgs = self._pil.get(base)
+        if not imgs:
+            self._prepare(folder, scale, flip, first=kind)
+            return None
+        if idx >= len(imgs):  # 還在準備中：先在已經做好的幾格裡循環
+            idx %= len(imgs)
+        key = base + (idx,)
+        photo = self._frames.get(key)
+        if photo is None:
+            if len(self._frames) > 1500:
+                self._frames.clear()
+            photo = self._frames[key] = ImageTk.PhotoImage(imgs[idx])
+        return photo
+
+    def _prepare(self, folder: str, scale: float, flip: bool, first: str):
+        """在背景把這個角色每個狀態的每一格都縮好。正在做就不重複開。"""
+        job = (self.character, scale, flip)
+        if job in self._preparing:
+            return
+        self._preparing.add(job)
+        order = [first] + [s for s in pet.STATES if s != first]
+
+        def work():
+            try:
+                for kind in order:
+                    base = (job[0], scale, kind, flip)
+                    if base in self._pil:
+                        continue
+                    n = pet.custom_count(folder, kind)
+                    frames = self._pil[base] = []  # 一格一格加進去，畫面可以邊做邊播
+                    for i in range(n):
+                        frames.append(pet.custom_frame(folder, kind, i, scale, CHROMA_RGB, flip))
+                    pet.forget_sources(folder)
+            finally:
+                self._preparing.discard(job)
+
+        # 換了角色或大小，舊的圖就用不到了
+        for k in [k for k in self._pil if k[0] != job[0] or k[1] != scale]:
+            del self._pil[k]
+        threading.Thread(target=work, daemon=True).start()
+
+    # ── 音樂（自訂角色在 pet.json 設定，例如跳舞時播歌） ──
+    def set_music(self, on: bool):
+        self.music_on = on
+        save_state(pet_music=on)
+        self._music_for = None  # 下一格重新判斷要不要播
+        if not on:
+            self._stop_music()
+
+    def has_music(self) -> bool:
+        folder = self.custom
+        return bool(folder and pet.custom_music(folder))
+
+    def _update_music(self, kind: str):
+        want = None
+        folder = self.custom
+        if folder and self.music_on and self.visible and not self._suspended:
+            path = pet.custom_music(folder).get(kind)
+            if path:
+                want = (path, kind)
+        if want == self._music_for:
+            return
+        self._music_for = want
+        if want is None:
+            self._stop_music()
+            return
+        try:
+            import winsound
+            # 被叫醒時一直跳一直播；做完了就慶祝一輪，不要整整三分鐘都在放歌
+            flags = winsound.SND_FILENAME | winsound.SND_ASYNC | (winsound.SND_LOOP if kind == "awake" else 0)
+            winsound.PlaySound(want[0], flags)
+        except (ImportError, RuntimeError):
+            self._music_for = None
+
+    def _stop_music(self):
+        try:
+            import winsound
+            winsound.PlaySound(None, 0)
+        except (ImportError, RuntimeError):
+            pass
+
+    def _step(self):
+        """播下一格動畫，並讓 mini / walk 模式跟著目標位置走。"""
+        self._anim = None
+        if not self.visible:
+            return
+        kind = self.shown_state()
+        if kind != self._shown_kind:
+            # 換狀態就從第一格開始，音樂也從頭播，畫面和聲音才對得上
+            self._shown_kind = kind
+            self._since = time.time()
+        self._update_music(kind)
+        if not self._suspended:
+            self._resize()
+            pos = None if self._held else self._anchor()
+            if pos is not None:
+                x, y = self._clamp(*pos)
+                if (x, y) != (self.win.winfo_x(), self.win.winfo_y()):
+                    self.win.geometry(f"+{x}+{y}")
+                    self.bubble.place()
+            flip = self.placement in ("walk", "inbar") and self._dir < 0 and not self._held
+            photo = self._frame(kind, flip)
+            if photo is not None:
+                self.label.configure(image=photo)
+            self._f = (self._f + 1) % pet.FRAMES
+        # 睡覺時慢慢動就好，省 CPU
+        # 自訂角色照它自己設定的播放速度（例如真人影片是每秒 24 格）
+        folder = self.custom
+        if folder:
+            delay = max(15, round(1000 / pet.custom_fps(folder)))
+        else:
+            delay = pet.FRAME_MS * (3 if kind == "idle" else 1)
+        self._anim = self.root.after(delay, self._step)
+
+    def toggle(self):
+        super().toggle()
+        save_state(pet_on=self.visible)
+        if self.visible:
+            self.start()
+        else:
+            self.bubble.close()
+            self._music_for = None
+            self._stop_music()
+
+    def suspend(self):
+        super().suspend()
+        self.bubble.close()
+        self._music_for = None
+        self._stop_music()
+
+    def say(self, text: str, ms: int):
+        if self.visible and not self._suspended:
+            self.bubble.show(text, self.display_name(), ms, self._head)
+
+    def render(self, q):
+        pass  # 寵物不看額度
+
+
 # ──────────────────────────────── 主程式 ────────────────────────────────
+
+def _tray_icon_class(pystray):
+    """pystray 的系統列圖示，但右鍵改開我們自己畫的選單。
+
+    pystray 在 Windows 上右鍵會用 TrackPopupMenuEx 顯示原生選單，沒辦法換外觀。
+    這裡攔下右鍵放開（WM_RBUTTONUP）的通知，改叫 on_right_click；其他照舊（左鍵、通知）。
+    """
+    WM_RBUTTONUP = 0x0205
+
+    class TrayIcon(pystray.Icon):
+        on_right_click = None
+
+        def _on_notify(self, wparam, lparam):
+            if lparam == WM_RBUTTONUP and self.on_right_click:
+                self.on_right_click()
+                return
+            super()._on_notify(wparam, lparam)
+
+    return TrayIcon
+
 
 class App:
     def __init__(self):
@@ -1305,6 +1943,10 @@ class App:
         self.window = QuotaWindow(self.root, self.dpi, self.request_refresh,
                                   self.request_poke, self.minimize)
         self.mini = MiniWindow(self.root, self.dpi, self.expand)
+        self.pet = PetWindow(self.root, self.dpi, self.mini)
+        self.pet.on_alert = self._alert
+        self.pet.open_folder = self.open_pet_folder
+        self._watch_until = 0.0
         self.icon = None
         self._poking = False
         self._last_poke: datetime | None = None
@@ -1321,6 +1963,8 @@ class App:
         st = load_state()
         # 兩個會動到額度或憑證的功能都預設關閉，使用者在系統列選單自己開
         self.auto_poke = bool(st.get("auto_poke", False))
+        fancymenu.load_custom_themes(THEMES_FILE)
+        fancymenu.set_theme(st.get("theme", "paper"))
         quota_source.ALLOW_REFRESH = bool(st.get("token_refresh", False))
         i18n.set_lang(st.get("lang", "auto"))
         style = st.get("tray_style", "burst")
@@ -1413,21 +2057,8 @@ class App:
         self.refresh()
 
     def _confirm(self, title_key: str, body_key: str) -> bool:
-        """開啟會花額度或動到登入的功能前，先把它做什麼、好處與代價講清楚。
-
-        右鍵選單是 Windows 原生選單，沒辦法做滑鼠停留說明，所以改在開啟時問一次。
-        root 是隱藏的，對話框要掛在一個置頂的暫時視窗上，不然會跑到其他視窗後面。
-        """
-        holder = tk.Toplevel(self.root)
-        holder.withdraw()
-        holder.attributes("-topmost", True)
-        try:
-            return messagebox.askyesno(
-                t(title_key), f"{t(body_key)}\n\n{t('confirm.yes_hint')}",
-                icon=messagebox.WARNING, parent=holder,
-            )
-        finally:
-            holder.destroy()
+        """開啟會花額度或動到登入的功能前，先把它做什麼、好處與代價講清楚。"""
+        return fancymenu.ask(self.root, self.dpi, t(title_key), t(body_key), t("confirm.enable"), t("confirm.cancel"))
 
     def toggle_auto_poke(self):
         if not self.auto_poke and not self._confirm("confirm.auto_poke.title", "confirm.auto_poke.body"):
@@ -1448,6 +2079,81 @@ class App:
                          else t("note.token_refresh", state=t("off")), clear_after=8000)
         self._api_next = 0.0  # 開了之後馬上試一次，不用等下一個週期
         self.refresh(force=True)
+
+    # ── 桌面寵物 ──
+    def toggle_pet_hook(self):
+        """安裝或移除 Claude Code 的 Notification hook，讓寵物準確知道「在等你允許」。"""
+        on = pet.hook_installed(CLAUDE_SETTINGS)
+        if not on and not self._confirm("confirm.pet_hook.title", "confirm.pet_hook.body"):
+            return
+        try:
+            if on:
+                pet.uninstall_hook(CLAUDE_SETTINGS, DATA_DIR)
+            else:
+                pet.install_hook(CLAUDE_SETTINGS, DATA_DIR)
+        except (OSError, ValueError) as e:
+            self.window.note(t("pet.hook_failed", e=str(e)[:60]), clear_after=10000)
+            return
+        self.pet._hook_checked = 0.0  # 下次輪詢馬上換資料來源
+        self.pet.say(t("pet.hook_off") if on else t("pet.hook_on"), PET_BUBBLE_MS)
+
+    # ── 等 Claude 的時候看短影片 ──
+    def video_items(self) -> list:
+        """「看短影片」子選單：常見的影音網站，加上你自己加的（存在設定檔裡）。"""
+        mine = [tuple(x) for x in load_state().get("video_links", []) if isinstance(x, list) and len(x) == 2]
+        items = [{"label": name, "command": lambda u=url: self.open_videos(u)} for name, url in VIDEO_SITES]
+        if mine:
+            items.append("-")
+            items += [{"label": name, "command": lambda u=url: self.open_videos(u)} for name, url in mine]
+        items += ["-", {"label": t("videos.add"), "command": self.add_video_link}]
+        if mine:
+            items.append({"label": t("videos.remove"), "submenu": [
+                {"label": name, "command": lambda n=name, u=url: self.remove_video_link(n, u)} for name, url in mine]})
+        return items
+
+    def add_video_link(self):
+        got = fancymenu.ask_text(self.root, self.dpi, t("videos.add_title"),
+                                 [t("videos.add_name"), t("videos.add_url")], t("videos.add_ok"), t("confirm.cancel"))
+        if not got or not got[0] or not got[1]:
+            return
+        name, url = got
+        if "://" not in url and not url.endswith(":"):
+            url = "https://" + url          # 只打 youtube.com 也行；spotify: 這種 app 連結照原樣
+        links = [x for x in load_state().get("video_links", []) if isinstance(x, list)]
+        links.append([name, url])
+        save_state(video_links=links)
+        self.pet.say(t("videos.added", name=name), 4000)
+
+    def remove_video_link(self, name: str, url: str):
+        links = [x for x in load_state().get("video_links", []) if x != [name, url]]
+        save_state(video_links=links)
+
+    def open_videos(self, url: str):
+        """用預設瀏覽器打開短影片。接下來兩小時內 Claude 一需要你，就發 Windows 通知叫你回來。
+
+        看影片多半是全螢幕，寵物和卡片都會讓開，對話框看不到，所以改用系統通知。
+        """
+        import webbrowser
+        webbrowser.open(url)
+        self._watch_until = time.time() + WATCH_SEC
+        self.pet.say(t("pet.say.videos"), PET_BUBBLE_MS)
+
+    def _alert(self, text: str):
+        if time.time() < self._watch_until or self.pet._suspended:
+            if self.icon is not None:
+                try:
+                    self.icon.notify(text, "ClaudeQuota")
+                except Exception:
+                    pass
+
+    def open_pet_folder(self):
+        """打開自訂角色資料夾（第一次會建立，並放一份說明怎麼命名圖檔的 README）。"""
+        root = pet.ensure_custom_root(DATA_DIR, i18n.lang())
+        try:
+            os.startfile(root)
+        except OSError as e:
+            self.window.note(str(e)[:60], clear_after=8000)
+        self.pet.say(t("pet.say.custom"), PET_BUBBLE_MS * 2)
 
     def show_help(self):
         """使用說明視窗。已經開著就拉到最前面，不重複開。"""
@@ -1605,7 +2311,7 @@ class App:
 
     def _lift_all(self):
         """殼層事件一來就立刻搶回置頂，不等下一趟看門狗。"""
-        for w in (self.window, self.mini):
+        for w in (self.window, self.mini, self.pet):
             w.lift_now()
 
     def _guard(self):
@@ -1618,7 +2324,7 @@ class App:
         if desk is not None:
             self._desk = desk
         busy = fullscreen_monitor()
-        for w in (self.window, self.mini):
+        for w in (self.window, self.mini, self.pet):
             w.keep_alive(changed, busy)
         self.root.after(GUARD_MS, self._guard)
 
@@ -1675,67 +2381,84 @@ class App:
             self.root.after_cancel(self._tick)
         self._tick = self.root.after(REFRESH_SEC * 1000, self.refresh)
 
-    def run(self):
-        import pystray
+    # ── 右鍵選單（系統列圖示） ──
+    def show_tray_menu(self):
+        fancymenu.load_custom_themes(THEMES_FILE)  # 改了 themes.json 不用重開
+        avoid = self.pet._head() if self.pet.visible else None
+        fancymenu.popup(self.root, self.dpi, self.tray_items(), from_taskbar=True, title="ClaudeQuota", avoid=avoid)
+
+    def set_theme(self, name: str):
+        """選單、確認視窗、寵物對話框一起換主題。"""
+        fancymenu.set_theme(name)
+        save_state(theme=name)
+        self.pet.say(t("theme.changed"), 3500)
+
+    def tray_items(self) -> list:
+        """系統列右鍵選單。每次打開都重新產生，勾勾和語言才會是最新的。
+
+        分三層：最常用的動作放最上面，寵物一組，外觀一組；會花額度或改到別的程式設定的
+        功能收進「進階」，開啟前都會先說明。
+        """
+        def radio(label, current, command):
+            return {"label": label, "checked": current, "radio": True, "command": command}
 
         def home():
             (self.mini if self.minimized else self.window).reset_position()
 
-        def style_item(key, label):
-            # pystray 用 co_argcount 決定怎麼呼叫：零參數的會被包起來忽略引數，
-            # 否則直接餵 (icon, item)。所以這裡一定要用真正的零參數閉包，
-            # 不能寫成 lambda _i=None, k=key: ...——第二個引數會把 k 蓋成 MenuItem。
-            def choose():
-                self.root.after(0, lambda: self.set_tray_style(key))
+        return [
+            {"label": t("menu.show"), "command": self.toggle_visible},
+            {"label": t("menu.mini"), "checked": self.minimized,
+             "command": self.expand if self.minimized else self.minimize},
+            {"label": t("menu.refresh"), "command": self.request_refresh},
+            {"label": t("menu.poke"), "command": self.request_poke},
+            "-",
+            {"label": t("menu.pet"), "submenu": lambda: self.pet.menu_items(tray=True)},
+            {"label": t("menu.videos"), "submenu": self.video_items},
+            {"label": t("menu.look"), "submenu": lambda: [
+                {"label": t("menu.style"), "submenu": [
+                    radio(t(lab), self.tray_style == k, lambda k=k: self.set_tray_style(k)) for k, lab in TRAY_STYLES]},
+                {"label": t("menu.lang"), "submenu": [
+                    radio(t("lang.auto"), i18n.choice() == "auto", lambda: self.set_lang("auto")),
+                    radio("中文", i18n.choice() == "zh", lambda: self.set_lang("zh")),
+                    radio("English", i18n.choice() == "en", lambda: self.set_lang("en"))]},
+                {"label": t("menu.theme"), "submenu": [
+                    radio(fancymenu.LABELS.get(k) or t(f"theme.{k}"), fancymenu.theme_name() == k,
+                          lambda k=k: self.set_theme(k))
+                    for k in fancymenu.THEMES]},
+                {"label": t("menu.home"), "command": home},
+            ]},
+            {"label": t("menu.advanced"), "submenu": lambda: [
+                {"label": t("menu.auto_poke"), "checked": self.auto_poke, "command": self.toggle_auto_poke},
+                {"label": t("menu.token_refresh"), "checked": quota_source.ALLOW_REFRESH,
+                 "command": self.toggle_token_refresh},
+                {"label": t("pet.hook"), "checked": pet.hook_installed(CLAUDE_SETTINGS),
+                 "command": self.toggle_pet_hook},
+            ]},
+            "-",
+            {"label": t("menu.help"), "command": self.show_help},
+            {"label": t("menu.quit"), "command": self.quit},
+        ]
 
-            def is_current(_item):
-                return self.tray_style == key
+    def run(self):
+        import pystray
 
-            return pystray.MenuItem(lambda _i: t(label), choose, checked=is_current, radio=True)
-
-        def lang_item(key, label_key=None):
-            def choose():
-                self.root.after(0, lambda: self.set_lang(key))
-
-            def is_current(_item):
-                return i18n.choice() == key
-
-            label = (lambda _i: t(label_key)) if label_key else {"zh": "中文", "en": "English"}[key]
-            return pystray.MenuItem(label, choose, checked=is_current, radio=True)
-
-        # 文字用 callable，切換語言後 update_menu() 就會換成新語言
+        # 右鍵選單是自己畫的（fancymenu），不用 Windows 預設的灰色選單。pystray 只負責系統列圖示本身，
+        # 它的選單只留一個預設項目給左鍵用；右鍵改由 _TrayIcon 攔下來開我們的選單。
         menu = pystray.Menu(
             pystray.MenuItem(lambda _i: t("menu.show"), lambda: self.root.after(0, self.toggle_visible),
                              default=True),
-            pystray.MenuItem(lambda _i: t("menu.mini"),
-                             lambda: self.root.after(
-                                 0, self.expand if self.minimized else self.minimize),
-                             checked=lambda _i: self.minimized),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem(lambda _i: t("menu.refresh"), self.request_refresh),
-            pystray.MenuItem(lambda _i: t("menu.poke"), lambda: self.root.after(0, self.request_poke)),
-            pystray.MenuItem(lambda _i: t("menu.auto_poke"), lambda: self.root.after(0, self.toggle_auto_poke),
-                             checked=lambda _i: self.auto_poke),
-            pystray.MenuItem(lambda _i: t("menu.token_refresh"),
-                             lambda: self.root.after(0, self.toggle_token_refresh),
-                             checked=lambda _i: quota_source.ALLOW_REFRESH),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem(lambda _i: t("menu.home"), lambda: self.root.after(0, home)),
-            pystray.MenuItem(lambda _i: t("menu.style"),
-                             pystray.Menu(*[style_item(k, lab) for k, lab in TRAY_STYLES])),
-            pystray.MenuItem(lambda _i: t("menu.lang"),
-                             pystray.Menu(lang_item("auto", "lang.auto"), lang_item("zh"), lang_item("en"))),
-            pystray.MenuItem(lambda _i: t("menu.help"), lambda: self.root.after(0, self.show_help)),
-            pystray.Menu.SEPARATOR,
             pystray.MenuItem(lambda _i: t("menu.quit"), self.quit),
         )
-        self.icon = pystray.Icon("ClaudeQuota", make_tray_image(None, self.tray_style),
-                                 t("tray.title"), menu)
+        self.icon = _tray_icon_class(pystray)("ClaudeQuota", make_tray_image(None, self.tray_style),
+                                              t("tray.title"), menu)
+        self.icon.on_right_click = lambda: self.root.after(0, self.show_tray_menu)
         threading.Thread(target=self.icon.run, daemon=True).start()
         # 圖示註冊之後才有對應的登錄檔項目可以設定，所以延後一點再提升
         self.root.after(4000, promote_tray_icon)
         self.refresh()
         self._guard()
+        if self.pet.visible:
+            self.pet.start()
         # hook 的事件是靠執行緒的訊息佇列送的，而 mainloop 就在抽這個佇列
         self._hook = hook_shell_events(self._lift_all)
         self.root.mainloop()
