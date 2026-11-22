@@ -11,7 +11,7 @@ A small Windows tray app for Claude Pro / Max users. It shows the official usage
 
 [中文說明](#中文說明)
 
-<img src="docs/hero-en.png" alt="ClaudeQuota on a Windows 11 desktop: a floating card showing the 5-hour limit at 42% with 2h 16m left and the weekly limit at 18%, a mini bar docked on the taskbar, the tray icon showing 42, and the tray menu">
+<img src="docs/hero-en.png" alt="ClaudeQuota on a Windows 11 desktop: a floating card showing the 5-hour limit at 42% and the weekly limit at 18% with its pace, a slime pet on the mini bar saying shop-api is done, the tray icon showing 42, and the themed tray menu">
 
 ## Features
 
@@ -116,7 +116,7 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 
 給 Claude Pro / Max 使用者的 Windows 系統列小工具，顯示官方用量數字與 5 小時視窗的重置時間，不會再做到一半才突然撞到額度上限。
 
-<img src="docs/hero-zh.png" alt="ClaudeQuota 在 Windows 11 桌面上：置頂卡片顯示 5 小時額度 42%、剩 2 小時 16 分，每週額度 18%；放在工作列上的迷你橫條、顯示 42 的系統列圖示與右鍵選單">
+<img src="docs/hero-zh.png" alt="ClaudeQuota 在 Windows 11 桌面上：置頂卡片顯示 5 小時額度 42%、每週額度 18% 與進度提示；迷你橫條上的史萊姆說 shop-api 做完了；系統列圖示顯示 42，以及主題右鍵選單">
 
 ### 功能
 

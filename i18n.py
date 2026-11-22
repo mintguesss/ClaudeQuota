@@ -121,6 +121,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "pet.say.done": {"zh": "{who} 做完了！", "en": "{who} is done!"},
     "pet.say.error": {"zh": "{who} 出錯了…", "en": "{who} hit an error…"},
     "pet.say.idle": {"zh": "沒有進行中的工作，睡個覺", "en": "Nothing running. Nap time"},
+    "pet.say.sessions": {"zh": "現在有 {n} 個對話在動：", "en": "{n} sessions going:"},
+    "pet.say.maybe_waiting": {"zh": "好像在等你", "en": "maybe waiting for you"},
+    "pet.say.mins": {"zh": "（{min} 分鐘）", "en": " ({min} min)"},
+    "pet.say.more": {"zh": "…還有 {n} 個", "en": "…and {n} more"},
     "pet.say.others": {"zh": "（另外還有 {n} 個對話在跑）", "en": " (+{n} more running)"},
     "confirm.pet_hook.title": {"zh": "安裝 Claude Code hook？", "en": "Install a Claude Code hook?"},
     "confirm.pet_hook.body": {
@@ -288,7 +292,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "■ 桌面寵物\n"
             "• 一隻跟著 Claude Code 狀態變表情的小東西：工作中、在等你允許（冒驚嘆號）、"
             "做完了（冒星星）、出錯了（頭上有烏雲）、沒事時睡覺。CLI、VS Code、桌面版的 Code 分頁都看得到\n"
-            "• 點一下：跳出對話框說明哪個專案在做什麼，再點對話框就關掉。在等你、做完、出錯時會自己冒出來講\n"
+            "• 點一下：跳出對話框說明哪個專案在做什麼（同時有好幾個對話時每個都列出來），再點對話框就關掉。"
+            "在等你、做完、出錯時會自己冒出來講\n"
             "• 睡著時點一下會叫醒它；哪種模式都可以拖到別的地方\n"
             "• 在寵物身上按右鍵：叫醒（任何時候都行）、手動改變狀態（或設回自動）、音樂開關、大小、隱藏\n"
             "• 右鍵選單「桌面寵物」：開關、叫醒、換角色（9 種）、換顏色（每個角色各記各的）、"
@@ -340,7 +345,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "• A little creature that reacts to Claude Code: working, waiting for your permission (a \"!\"), "
             "done (sparkles), error (a rain cloud), and asleep when nothing's running. Sees the CLI, VS Code and "
             "the desktop app's Code tab\n"
-            "• Click it for a dialog saying which project is doing what; click the dialog to close it. It speaks "
+            "• Click it for a dialog saying which project is doing what (every session, when several are running); click the dialog to close it. It speaks "
             "up by itself when Claude is waiting, done or hits an error\n"
             "• Click it while it sleeps to wake it up; drag it anywhere in any mode\n"
             "• Right-click the pet: wake it up (any time), set its state by hand (or back to automatic), music "

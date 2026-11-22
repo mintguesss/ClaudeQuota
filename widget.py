@@ -1615,7 +1615,8 @@ class PetWindow(FloatWindow):
         elif self.shown_state() == "idle":
             self.wake()
         else:
-            self.say(self.describe(), PET_BUBBLE_MS)
+            text = self.describe(full=True)
+            self.say(text, PET_BUBBLE_MS + 1500 * text.count("\n"))  # 列得越多，留越久
 
     def _hover(self, e):
         pass
@@ -1694,8 +1695,20 @@ class PetWindow(FloatWindow):
             items += ["-", {"label": t("pet.hide"), "command": self.hide}]
         return items
 
-    def describe(self) -> str:
+    def describe(self, full: bool = False) -> str:
+        """現在的狀態說成一句話。full（點寵物時）且同時有好幾個對話在動：每個都列一行。"""
         s = self.state
+        sessions = claude_state.last_sessions
+        if full and len(sessions) >= 2:
+            lines = [t("pet.say.sessions", n=len(sessions))]
+            for x in sessions[:6]:
+                label = t("pet.say.maybe_waiting") if x.kind == "waiting" and x.guessed else t(f"pet.state.{x.kind}")
+                mins = int((time.time() - x.since) // 60) if x.kind == "working" else 0
+                sep = "：" if i18n.lang() == "zh" else ": "
+                lines.append(f"• {x.project or 'Claude'}{sep}{label}" + (t("pet.say.mins", min=mins) if mins else ""))
+            if len(sessions) > 6:
+                lines.append(t("pet.say.more", n=len(sessions) - 6))
+            return "\n".join(lines)
         who = s.project or "Claude"
         kind = s.kind
         if kind == "idle" and self.shown_state() in ("awake", "held"):

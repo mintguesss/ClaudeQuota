@@ -63,6 +63,22 @@ hook = {"transcript": "x", "at": NOW - 2}
 check(kind(assistant(3, "tool_use", ["Bash"]), hook=hook) == "waiting", "a hook notification after the call is waiting")
 check(kind(user(1), hook=hook) == "working", "once you answer, the old notification no longer counts")
 
+# Several sessions at once: the one that needs you most comes first, and all of them are listed.
+with tempfile.TemporaryDirectory() as d:
+    for proj, entries in (("a", [user(5, "go")]), ("b", [assistant(60, "tool_use", ["Bash"])]),
+                          ("c", [assistant(30, "end_turn")])):
+        os.makedirs(os.path.join(d, proj))
+        with open(os.path.join(d, proj, "s.jsonl"), "w", encoding="utf-8") as fh:
+            for e in entries:
+                e = dict(e, cwd=f"C:\\dev\\{proj}")
+                fh.write(json.dumps(e) + "\n")
+    real_projects = cs.PROJECTS
+    cs.PROJECTS = d
+    best = cs.current(now=NOW)
+    cs.PROJECTS = real_projects
+    check(best.kind == "waiting" and best.project == "b", "the session waiting for you comes first")
+    check([s.project for s in cs.last_sessions] == ["b", "a", "c"], "every active session is listed, most urgent first")
+
 with tempfile.TemporaryDirectory() as d:
     f = os.path.join(d, "n.json")
     with open(f, "w", encoding="utf-8") as fh:

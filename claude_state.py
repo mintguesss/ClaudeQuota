@@ -183,9 +183,14 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
     # 不再活躍的檔案不用留在快取裡
     for path in [p for p in _cache if not os.path.exists(p)]:
         del _cache[path]
-    busy = [s for s in states if s.kind != "idle"]
+    busy = sorted((s for s in states if s.kind != "idle"), key=lambda s: (PRIORITY[s.kind], s.since), reverse=True)
+    global last_sessions
+    last_sessions = busy  # 每個有在動的對話，最需要你注意的排前面（點寵物時列出來）
     if not busy:
         return State("idle")
-    best = max(busy, key=lambda s: (PRIORITY[s.kind], s.since))
+    best = busy[0]
     best.others = sum(1 for s in busy if s.kind in ("working", "waiting")) - (best.kind in ("working", "waiting"))
     return best
+
+
+last_sessions: list[State] = []

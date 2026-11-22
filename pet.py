@@ -736,7 +736,9 @@ _TAG = (232, 128, 72)
 
 
 def _wrap(text: str, font: ImageFont.FreeTypeFont, max_w: float) -> list[str]:
-    """中英混排換行：英文照單字斷，中文照字斷。"""
+    """中英混排換行：英文照單字斷，中文照字斷；文字裡的換行照樣換。"""
+    if "\n" in text:
+        return [line for part in text.split("\n") for line in _wrap(part, font, max_w)]
     lines, cur = [], ""
     for token in _tokens(text):
         trial = cur + token
