@@ -133,6 +133,15 @@ def _work_area(root: tk.Misc) -> tuple[int, int, int, int]:
         return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight()
 
 
+def _raise(win: tk.Toplevel):
+    try:
+        u = ctypes.windll.user32
+        hwnd = u.GetParent(win.winfo_id()) or win.winfo_id()
+        u.SetWindowPos(hwnd, ctypes.c_void_p(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # TOPMOST, no move/size/activate
+    except Exception:
+        pass
+
+
 def _make_tool_window(win: tk.Toplevel):
     """不出現在工作列和 Alt+Tab。"""
     try:
@@ -183,6 +192,7 @@ class FancyMenu:
         if x + self.w > right:
             x = (parent.x - self.w + round(6 * dpi)) if parent else right - self.w
         self.x, self.y = max(left, x), max(top, min(y, bottom - self.h))
+        self.avoid = avoid
         if avoid:
             self.x, self.y = _clear_of(avoid, self.x, self.y, self.w, self.h, (left, top, right, bottom),
                                        round(8 * dpi))
@@ -345,7 +355,7 @@ class FancyMenu:
         self.child_row = row
         self.child = FancyMenu(self.root, self.k, sub, self.x + self.w - round(8 * self.k),
                                self.y + round(a - PAD * self.k), parent=self,
-                               align_bottom=self.y + round(b + PAD * self.k))
+                               align_bottom=self.y + round(b + PAD * self.k), avoid=self.avoid)
         self._paint()
 
     def _click(self, e):
@@ -377,6 +387,10 @@ class FancyMenu:
                 return
         except tk.TclError:
             return
+        # 寵物、卡片、橫條每 0.25 秒會把自己拉回最上層；選單開著時也要一直搶回來，
+        # 不然開在寵物身上的子選單會被蓋到後面，看起來像沒打開
+        for m in self._windows():
+            _raise(m.win)
         if _mouse_down():
             x, y = _cursor()
             if not any(m.x <= x < m.x + m.w and m.y <= y < m.y + m.h for m in self._windows()):

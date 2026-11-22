@@ -42,6 +42,7 @@ class State:
     since: float = 0.0            # 這個狀態從什麼時候開始（epoch 秒）
     guessed: bool = False         # waiting 是猜的（沒裝 hook）
     others: int = 0               # 另外還有幾個對話在跑
+    key: str = ""                 # 哪個對話（紀錄檔路徑），用來分辨同一個對話的同一次完成
 
 
 def _ts(entry: dict) -> Optional[float]:
@@ -179,6 +180,7 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
             mine = hook if hook and hook["transcript"] == os.path.normcase(os.path.abspath(f.path)) else None
             s = session_state(entries, now, mine, guess_waiting=hook_file is None)
             if s:
+                s.key = f.path
                 states.append(s)
     # 不再活躍的檔案不用留在快取裡
     for path in [p for p in _cache if not os.path.exists(p)]:

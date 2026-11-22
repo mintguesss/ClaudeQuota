@@ -1322,6 +1322,7 @@ CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
 PET_POLL_MS = 2000      # 多久看一次 Claude Code 的狀態
 PET_BUBBLE_MS = 7000
 PET_AWAKE_SEC = 90      # 叫醒之後醒著多久才又睡回去
+PET_DONE_MIN_SEC = 30   # 做了至少這麼久才報「做完了」
 PET_SIZES = (1.0, 1.5, 2.0, 3.0)
 WATCH_SEC = 2 * 3600    # 打開短影片後多久內，Claude 需要你時改發 Windows 通知
 VIDEO_SITES = (  # (名稱, 網址)：名稱是品牌名，不翻譯
@@ -1473,6 +1474,8 @@ class PetWindow(FloatWindow):
         self.music_on = bool(st.get("pet_music", True))
         self._music_for = None
         self.on_alert = None           # Claude 需要你時通知外面（例如發 Windows 通知）
+        self._work_start: dict = {}    # 每個對話這次從什麼時候開始工作
+        self._told: set = set()        # 已經講過的事件，不重講
         self.bubble = Bubble(root, dpi)
         self.forced: str | None = None  # 右鍵選單手動指定的狀態
         self.label.bind("<Button-3>", self._context)
@@ -1747,11 +1750,55 @@ class PetWindow(FloatWindow):
         self.state = new
         if new.kind != old.kind:
             self._f = 0
-            if new.kind in ("waiting", "done", "error"):
-                self.say(self.describe(), PET_BUBBLE_MS * (2 if new.kind == "waiting" else 1))
-                if self.on_alert:
-                    self.on_alert(self.describe())
+        news = self._news(claude_state.last_sessions)
+        if news:
+            text = self._say_one(news)
+            self.say(text, PET_BUBBLE_MS * (2 if news.kind == "waiting" else 1))
+            if self.on_alert:
+                self.on_alert(text)
         self._poll = self.root.after(PET_POLL_MS, self.poll)
+
+    def _news(self, sessions):
+        """這一輪有沒有值得冒出來講的事；一件事只講一次。
+
+        同時開好幾個對話時，以前是「最重要的狀態一變就講」，於是每個對話每結束一輪都會跳一次
+        「做完了」。現在每個對話分開記：
+          - 在等你、出錯了：每一次都講（同一次不重講）
+          - 做完了：只講這次至少做了 PET_DONE_MIN_SEC 的；一下子就結束的小事不吵你
+        程式剛開時已經是「做完了」的不算（沒看到它在做）。
+        """
+        now = time.time()
+        seen = set()
+        best = None
+        for s in sessions:
+            seen.add(s.key)
+            if s.kind == "working":
+                self._work_start.setdefault(s.key, s.since)
+                continue
+            event = (s.key, s.kind, round(s.since))
+            if event in self._told:
+                continue
+            if s.kind == "done":
+                started = self._work_start.pop(s.key, None)
+                if started is None or s.since - started < PET_DONE_MIN_SEC:
+                    self._told.add(event)
+                    continue
+            elif s.kind not in ("waiting", "error"):
+                continue
+            self._told.add(event)
+            if best is None or claude_state.PRIORITY[s.kind] > claude_state.PRIORITY[best.kind]:
+                best = s
+        for key in [k for k in self._work_start if k not in seen]:  # 對話不見了（關掉、太久沒動）
+            del self._work_start[key]
+        if len(self._told) > 500:
+            self._told.clear()
+        return best
+
+    def _say_one(self, s) -> str:
+        who = s.project or "Claude"
+        if s.kind == "waiting":
+            return t("pet.say.waiting_guess" if s.guessed else "pet.say.waiting", who=who)
+        return t(f"pet.say.{s.kind}", who=who)
 
     def start(self):
         folder = self.custom
