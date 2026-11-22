@@ -43,6 +43,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "left.dh": {"zh": "剩 {d} 天 {h} 小時", "en": "{d}d {h}h left"},
     "left.d": {"zh": "剩 {d} 天", "en": "{d}d left"},
     "card.week_resets": {"zh": "{left} · {time} 重置", "en": "{left} · resets {time}"},
+    "pace.plenty": {"zh": "照這個進度，重置時還會剩不少", "en": "At this pace you'll have plenty left at reset"},
+    "pace.on_track": {"zh": "照這個進度，剛好夠用到重置", "en": "At this pace you'll just about last until reset"},
+    "pace.short": {"zh": "照這個進度，約 {time} 會用完", "en": "At this pace you'll run out around {time}"},
+    "tray.pace_short": {"zh": "（約 {time} 用完）", "en": " (out ~{time})"},
     "weekdays": {"zh": "週一,週二,週三,週四,週五,週六,週日", "en": "Mon,Tue,Wed,Thu,Fri,Sat,Sun"},
     "weekday_time": {"zh": "{day} {time}", "en": "{day} {time}"},
 
@@ -158,8 +162,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "zh": (
             "ClaudeQuota 顯示 Claude 訂閱的兩個額度：\n"
             "• 5 小時額度：從你第一次使用起算 5 小時，時間到就重置\n"
-            "• 每週額度：每週重置一次\n"
-            "數字都是官方的，取不到就顯示「讀不到額度資料」，不會自己估。\n\n"
+            "• 每週額度：每週重置一次。下面會照這週的平均速度提示重置前夠不夠用，"
+            "不夠時用紅字標出大約何時用完（週期開始半天內不提示）\n"
+            "數字都是官方的，取不到就顯示「讀不到額度資料」，不會自己估。\n"
+            "查的是 Claude Code（含 VS Code 擴充功能）登入的帳號；桌面版登入別的帳號不影響。\n\n"
             "■ 系統列圖示\n"
             "• 圖示顯示 5 小時額度的用量，有 6 種樣式，可在右鍵選單的「圖示樣式」切換\n"
             "• 左鍵：顯示或收起卡片\n"
@@ -191,8 +197,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": (
             "ClaudeQuota shows the two limits of your Claude subscription:\n"
             "• 5-hour limit: counts from your first use, resets 5 hours later\n"
-            "• Weekly limit: resets once a week\n"
-            "Numbers are official. If none are available it says \"No usage data\" instead of guessing.\n\n"
+            "• Weekly limit: resets once a week. Below it, a hint says whether this week's average pace lasts "
+            "until the reset, and in red roughly when you'd run out if not (no hint in the first half day)\n"
+            "Numbers are official. If none are available it says \"No usage data\" instead of guessing.\n"
+            "It reads the account Claude Code (including the VS Code extension) is signed in to; "
+            "the desktop app being on another account doesn't matter.\n\n"
             "■ Tray icon\n"
             "• The icon shows your 5-hour usage; pick one of 6 styles under Icon style in the menu\n"
             "• Left-click: show or hide the card\n"

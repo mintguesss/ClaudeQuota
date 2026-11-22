@@ -874,10 +874,10 @@ class Painter:
 class CardPainter(Painter):
     """把一張 Quota 畫成 Windows 通知樣式的卡片。"""
 
-    W, H = 344, 208
+    W, H = 344, 224
     PAD = 16
     RADIUS = 8      # Windows 11 通知的圓角就是小小的
-    FOOT_TOP = 178  # 頁尾淡底色帶從這裡開始（每週那列下面還有一行重置時間）
+    FOOT_TOP = 194  # 頁尾淡底色帶從這裡開始（每週那列下面還有重置時間和進度兩行）
 
     # ── 一列額度 ──
     def _row(self, y, label, pct, colors, accent, sub=None):
@@ -934,6 +934,12 @@ class CardPainter(Painter):
                     wleft = (q.week_resets_at - datetime.now(timezone.utc)).total_seconds() / 60
                     sub2 = t("card.week_resets", left=human_left_long(wleft), time=weekday_time(q.week_resets_at))
                 self._row(118, t("card.weekly"), q.week_used, GRAD_WEEK, WEEK_ACCENT, sub2)
+                pace = q.week_pace()
+                if pace:
+                    kind, finish = pace
+                    text = t("pace.short", time=weekday_time(finish)) if finish else t(f"pace.{kind}")
+                    self._text((self.PAD, 174), text, self._f("zh_l", 11),
+                               WARN_RED if kind == "short" else FAINT)
             if q.live:
                 # 更新節奏會自我收斂、也可能被限流，每次間隔都不同，
                 # 所以直接把「上次更新多久了」秒數寫出來
@@ -1198,6 +1204,14 @@ class FloatWindow:
         if text and clear_after:
             self.root.after(clear_after, lambda: self.note(None))
 
+    @staticmethod
+    def _pace_sig(q):
+        """每週進度提示換算到分鐘：預計用完的時刻只顯示到分。"""
+        pace = q.week_pace()
+        if pace is None or pace[1] is None:
+            return pace
+        return pace[0], weekday_time(pace[1])
+
     def _signature(self):
         """畫面上真正看得到的東西。沒變就不用重畫（重畫要 ~34ms）。"""
         q = self._last
@@ -1215,7 +1229,7 @@ class FloatWindow:
         return (
             i18n.lang(), self._hot, self._note, age,
             None if q is None else (q.percent_used, q.week_used, q.resets_exact,
-                                    q.stale, q.live, left, wleft),
+                                    q.stale, q.live, left, wleft, self._pace_sig(q)),
         )
 
     def redraw(self, force: bool = False):
@@ -1648,6 +1662,9 @@ class App:
                 self.icon.title = t("tray.no_data")
             else:
                 week = t("tray.week", pct=f"{q.week_used:.0f}") if q.week_used is not None else ""
+                pace = q.week_pace()
+                if pace and pace[0] == "short":
+                    week += t("tray.pace_short", time=weekday_time(pace[1]))
                 stale = t("tray.stale") if q.stale else ""
                 self.icon.title = t("tray.used", pct=f"{q.percent_used:.0f}", week=week, stale=stale)
 

@@ -17,6 +17,7 @@ A small Windows tray app for Claude Pro / Max users. It shows the official usage
 
 - **Tray icon** with your 5-hour usage in 6 styles; hover for a summary
 - **Floating card** with both limits, progress bars, and when each one resets (time left and the exact time, including the weekly reset day)
+- **Weekly pace**: at this week's average rate, will you last until the reset? If not, it says in red roughly when you'll run out
 - **Mini bar** you can dock on the taskbar, or hide everything and keep only the tray icon
 - **Put them anywhere**: drag the card and the mini bar wherever you like. Each remembers its own spot and reopens there next time
 - Stays put through Win+D and virtual desktop switches, and **gets out of the way of full-screen games and videos**
@@ -32,6 +33,8 @@ Grab **`ClaudeQuota.exe`** from the [latest release](https://github.com/mintgues
 - To start with Windows: press `Win + R`, type `shell:startup`, and put a shortcut to `ClaudeQuota.exe` in that folder.
 
 **Requirements:** Windows 10 or 11, and [Claude Code](https://claude.com/claude-code) signed in at least once (that is where the usage token comes from). The Claude desktop app is optional and acts as a fallback.
+
+The numbers are for the account Claude Code is signed in to (the CLI and the VS Code extension share it). If the desktop app is signed in to a different account, ClaudeQuota still shows Claude Code's.
 
 ### Run from source
 
@@ -101,6 +104,7 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 
 - 系統列圖示顯示 5 小時用量，有 6 種樣式可選；滑鼠停留可看摘要
 - 置頂卡片顯示兩個額度的用量、進度條，以及各自的重置時間（剩多久與確切時間，每週額度會標星期幾）
+- **每週進度提示**：照這週的平均速度，重置前夠不夠用；不夠的話用紅字標出大約何時用完
 - 卡片可縮成一條細橫條放在工作列上，或收起只留系統列圖示
 - **位置隨你放**：卡片和橫條都能拖到任何地方，各自記住位置，下次開啟會出現在同一個地方
 - 不受「顯示桌面」（Win+D）或切換虛擬桌面影響；全螢幕的遊戲或影片會自動讓開，結束後自己回來
@@ -116,6 +120,8 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 - 開機自動啟動：按 `Win + R`，輸入 `shell:startup`，把 `ClaudeQuota.exe` 的捷徑放進去。
 
 **需求：** Windows 10 或 11，以及至少登入過一次的 [Claude Code](https://claude.com/claude-code)（用量 token 從它來）。Claude 桌面版為選用，作為備援資料來源。
+
+顯示的是 Claude Code 登入的帳號（CLI 和 VS Code 擴充功能共用同一個）。桌面版登入別的帳號時，仍以 Claude Code 的為準。
 
 從原始碼執行：`pip install pystray pillow` 後雙擊 `啟動.vbs`（不會出現主控台視窗）。
 

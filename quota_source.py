@@ -28,9 +28,13 @@ from typing import Optional
 from i18n import t
 
 WINDOW_HOURS = 5
+WEEK_SECONDS = 7 * 24 * 3600
+PACE_MIN_ELAPSED = 12 * 3600  # 週期開始不到半天就不推估進度
+PACE_PLENTY = 75.0            # 照目前速度到重置時用不到這麼多 % = 綽綽有餘
 
 CLAUDE_CODE_PROJECTS = os.path.expanduser("~/.claude/projects")
 CREDENTIALS = os.path.expanduser("~/.claude/.credentials.json")
+CLAUDE_JSON = os.path.expanduser("~/.claude.json")  # Claude Code 的帳號資訊
 
 USAGE_API = "https://api.anthropic.com/api/oauth/usage"
 API_TIMEOUT = 12
@@ -105,6 +109,27 @@ class Quota:
     @property
     def week_left(self) -> Optional[float]:
         return None if self.week_used is None else max(0.0, 100.0 - self.week_used)
+
+    def week_pace(self, now: Optional[datetime] = None) -> Optional[tuple[str, Optional[datetime]]]:
+        """照這週到目前的平均速度推下去，重置前會不會用完。
+
+        回傳 ('plenty', None)、('on_track', None) 或 ('short', 預計用完的時刻)；
+        資料不足或週期剛開始（樣本太少，推出來只是雜訊）就回 None。
+        """
+        if self.week_used is None or self.week_resets_at is None or self.week_used >= 100:
+            return None
+        now = now or datetime.now(timezone.utc)
+        left = (self.week_resets_at - now).total_seconds()
+        elapsed = WEEK_SECONDS - left
+        if left <= 0 or elapsed < PACE_MIN_ELAPSED:
+            return None
+        if self.week_used <= 0:
+            return ("plenty", None)
+        rate = self.week_used / elapsed  # 每秒用掉幾 %
+        finish = now + timedelta(seconds=(100.0 - self.week_used) / rate)
+        if finish < self.week_resets_at:
+            return ("short", finish)
+        return ("plenty", None) if rate * WEEK_SECONDS < PACE_PLENTY else ("on_track", None)
 
 
 # ──────────────────────────── 來源 1：即時用量 API ────────────────────────────
@@ -559,7 +584,38 @@ def _parse_plan_usage_history(data: dict) -> Optional[dict]:
         "sampled": sampled,
         "resets": resets,
         "resets_exact": exact,
+        "org": last.get("org"),
     }
+
+
+_org_cache: tuple[float, Optional[str]] = (0.0, None)
+
+
+def _code_org() -> Optional[str]:
+    """Claude Code 登入帳號的組織 id（~/.claude.json），讀不到就 None。"""
+    global _org_cache
+    try:
+        mtime = os.path.getmtime(CLAUDE_JSON)
+    except OSError:
+        return None
+    if mtime != _org_cache[0]:
+        try:
+            with open(CLAUDE_JSON, encoding="utf-8") as f:
+                org = (json.load(f).get("oauthAccount") or {}).get("organizationUuid")
+        except (OSError, ValueError, AttributeError):
+            org = None
+        _org_cache = (mtime, org)
+    return _org_cache[1]
+
+
+def _other_account(parsed: dict) -> bool:
+    """桌面版快取是不是另一個帳號的。
+
+    即時數字查的是 Claude Code 登入的帳號；桌面版可以登入別的帳號，拿它的數字
+    來補位會把兩個帳號混在一起。兩邊都知道組織 id 而且不同，才算另一個帳號。
+    """
+    code, desk = _code_org(), parsed.get("org")
+    return bool(code and desk and code != desk)
 
 
 # 解析結果快取。桌面版每 5 分鐘才寫一次檔，但小工具想更頻繁地更新倒數，
@@ -579,7 +635,7 @@ def read_desktop_quota() -> Optional[Quota]:
         cached = _parse_cache.get(path)
         if cached and cached[0] == stamp:
             parsed = cached[1]
-            if parsed is None:
+            if parsed is None or _other_account(parsed):
                 continue
             return _to_quota(parsed)
 
@@ -621,6 +677,8 @@ def read_desktop_quota() -> Optional[Quota]:
             }
 
         _parse_cache[path] = (stamp, parsed)
+        if _other_account(parsed):
+            continue
         return _to_quota(parsed)
     return None
 
