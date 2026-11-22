@@ -44,6 +44,14 @@ THEMES = {
 }
 _theme = "paper"
 _BUILTIN = tuple(THEMES)
+# 自訂主題可以開的裝飾：
+#   deco: "duck"      名牌上一隻小鴨、選中的單選項目變小鴨、左下角一隻小鴨
+#   mark: "x‿x"       右下角一小段字
+#   pattern: true     很淡的愛心、星星（有 duck 時還有小鴨）底紋
+#   check: "heart"    勾勾換成愛心，對話框閃爍的 ▼ 也是
+#   divider: "hearts" 分隔線換成一排小點，中間一顆愛心
+#   bow: true         右上角一個蝴蝶結
+DECOR = ("deco", "mark", "pattern", "check", "divider", "bow")
 LABELS: dict[str, str] = {}   # 自訂主題的顯示名稱（內建主題用 i18n 翻譯）
 
 
@@ -69,14 +77,14 @@ def load_custom_themes(path: str) -> None:
             continue
         theme = dict(THEMES["paper"])
         for key, value in spec.items():
-            if key in ("label", "deco", "mark"):
+            if key == "label" or key in DECOR:
                 continue
             if key == "edge_w":
                 theme[key] = float(value)
             elif isinstance(value, (list, tuple)) and len(value) == 3:
                 theme[key] = tuple(int(v) for v in value)
-        theme["deco"] = spec.get("deco")
-        theme["mark"] = spec.get("mark")
+        for key in DECOR:  # 裝飾選項原樣保留
+            theme[key] = spec.get(key)
         THEMES[name] = theme
         LABELS[name] = str(spec.get("label", name))
 
@@ -92,6 +100,10 @@ def theme() -> dict:
 
 def theme_name() -> str:
     return _theme
+
+
+def _mix(a, b, t):
+    return tuple(round(x + (y - x) * t) for x, y in zip(a, b))
 
 
 def _hex(c) -> str:
@@ -242,8 +254,26 @@ class FancyMenu:
         d.rounded_rectangle((ew / 2, ew / 2, self.w * s - ew / 2 - 1, self.h * s - ew / 2 - 1), RADIUS * k * s,
                             fill=T["bg"], outline=T["edge"], width=ew)
         inset = 4 * k * s
+        if T.get("pattern"):
+            import pet
+            layer = Image.new("RGB", img.size, _CHROMA)
+            pet.draw_pattern(ImageDraw.Draw(layer), (inset, inset + self.head * s, self.w * s - inset,
+                                                     self.h * s - inset), _mix(T["bg"], T["accent"], .16), k * s,
+                             seed=self.w + self.h, duck=_mix(T["bg"], (255, 210, 64), .3) if T.get("deco") == "duck"
+                             else None)
+            mask = Image.new("L", img.size, 0)
+            ImageDraw.Draw(mask).rounded_rectangle((inset, inset, self.w * s - inset, self.h * s - inset),
+                                                   RADIUS * 0.6 * k * s, fill=255)
+            keep = Image.eval(layer.convert("L"), lambda v: 0 if v < 8 else 255)
+            img.paste(layer, (0, 0), Image.composite(keep, mask, mask))
         d.rounded_rectangle((inset, inset, self.w * s - inset, self.h * s - inset), RADIUS * 0.6 * k * s,
                             outline=T["inner"], width=max(1, round(k * s)))
+        if T.get("bow"):
+            import pet
+            pet.draw_bow(d, self.w * s - 20 * k * s, 9 * k * s, 9 * k * s, T["accent"], T["edge"])
+        if T.get("deco") == "duck" and self.h > 160 * k:
+            import pet
+            pet.draw_duck(d, (PAD * 2 + 6) * k * s, (self.h - PAD * 1.5 * k - 5 * k) * s, 5.5 * k * s)
         if self.title:  # 名牌：跟寵物對話框的名牌同一個樣子
             tf = _font(round(11 * k * s), True)
             duck = T.get("deco") == "duck"
@@ -264,8 +294,18 @@ class FancyMenu:
             a, b = self.rows[i]
             if it == "-":
                 mid = (a + b) / 2 * s
-                d.line((PAD * 2 * k * s, mid, (self.w - PAD * 2 * k) * s, mid), fill=T["sep"],
-                       width=max(1, round(k * s)))
+                if T.get("divider") == "hearts":
+                    import pet
+                    x, end, center = PAD * 3 * k * s, (self.w - PAD * 3 * k) * s, self.w * s / 2
+                    while x < end:
+                        if abs(x - center) > 10 * k * s:
+                            r = 1.1 * k * s
+                            d.ellipse((x - r, mid - r, x + r, mid + r), fill=T["sep"])
+                        x += 7 * k * s
+                    pet.draw_heart(d, center, mid - 0.5 * k * s, 3.6 * k * s, T["accent"])
+                else:
+                    d.line((PAD * 2 * k * s, mid, (self.w - PAD * 2 * k) * s, mid), fill=T["sep"],
+                           width=max(1, round(k * s)))
                 continue
             enabled = it.get("enabled", True)
             if (i == self.hot or i == self.child_row) and enabled:
@@ -281,6 +321,9 @@ class FancyMenu:
                 elif it.get("radio"):
                     r = 4.2 * k * s
                     d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=T["accent"])
+                elif T.get("check") == "heart":
+                    import pet
+                    pet.draw_heart(d, cx, cy - 0.5 * k * s, 5 * k * s, T["accent"])
                 else:
                     d.line((cx - 5 * k * s, cy, cx - 1.5 * k * s, cy + 4 * k * s, cx + 6 * k * s, cy - 4.5 * k * s),
                            fill=T["accent"], width=max(2, round(2.2 * k * s)), joint="curve")
@@ -464,6 +507,44 @@ def clear_of(root: tk.Misc, avoid, x, y, w, h, gap) -> tuple[int, int]:
 
 # ─────────────────────────────── 確認對話框 ───────────────────────────────
 
+def _small_image(w: int, h: int, draw) -> ImageTk.PhotoImage:
+    """畫一張小圖（先放大畫再縮小）給 Tk 的 Label 用。"""
+    big = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
+    draw(ImageDraw.Draw(big), SS)
+    return ImageTk.PhotoImage(big.resize((w, h), Image.LANCZOS))
+
+
+def _title_row(parent, card, title, T, k, W):
+    row = tk.Frame(parent, bg=card)
+    row.pack(fill="x")
+    if T.get("deco") == "duck":
+        import pet
+        size = round(24 * k)
+        photo = _small_image(size, size, lambda d, s: pet.draw_duck(d, size * s / 2 - 2 * s, size * s / 2 + 2 * s,
+                                                                         size * s * .36))
+        lab = tk.Label(row, image=photo, bg=card)
+        lab.image = photo  # 要留參照，不然圖會被回收
+        lab.pack(side="left", padx=(0, round(6 * k)))
+    tk.Label(row, text=title, bg=card, fg=_hex(T["text"]), font=("Microsoft JhengHei UI", 13, "bold"),
+             anchor="w", justify="left", wraplength=W - round(80 * k)).pack(side="left", fill="x")
+
+
+def _underline(parent, card, T, k):
+    """標題下的短線；主題用愛心時換成一排小愛心。"""
+    if T.get("check") == "heart":
+        import pet
+        w, h = round(70 * k), round(12 * k)
+        photo = _small_image(w, h, lambda d, s: [pet.draw_heart(d, (6 + i * 14) * k * s, h * s / 2, 4.2 * k * s,
+                                                                T["accent"] if i % 2 == 0 else _mix(T["accent"], T["bg"], .45))
+                                                 for i in range(5)])
+        lab = tk.Label(parent, image=photo, bg=card)
+        lab.image = photo
+        lab.pack(anchor="w", pady=(round(4 * k), round(10 * k)))
+    else:
+        tk.Frame(parent, bg=_hex(T["accent"]), height=max(2, round(3 * k)), width=round(36 * k)).pack(
+            anchor="w", pady=(round(6 * k), round(12 * k)))
+
+
 def ask(root: tk.Misc, dpi: float, title: str, body: str, yes: str, no: str) -> bool:
     """跟選單同一個主題的「是／否」對話框。會等使用者選完才回傳。"""
     k, T = dpi, theme()
@@ -477,10 +558,8 @@ def ask(root: tk.Misc, dpi: float, title: str, body: str, yes: str, no: str) -> 
     outer.pack()
     inner = tk.Frame(outer, bg=card, padx=round(22 * k), pady=round(18 * k))
     inner.pack()
-    tk.Label(inner, text=title, bg=card, fg=_hex(T["text"]), font=("Microsoft JhengHei UI", 13, "bold"),
-             anchor="w", justify="left", wraplength=W - round(44 * k)).pack(fill="x")
-    tk.Frame(inner, bg=_hex(T["accent"]), height=max(2, round(3 * k)), width=round(36 * k)).pack(
-        anchor="w", pady=(round(6 * k), round(12 * k)))
+    _title_row(inner, card, title, T, k, W)
+    _underline(inner, card, T, k)
     tk.Label(inner, text=body, bg=card, fg=_hex(T["text"]), font=("Microsoft JhengHei UI", 10), anchor="w",
              justify="left", wraplength=W - round(44 * k)).pack(fill="x")
     result = tk.BooleanVar(win, value=False)
@@ -531,10 +610,8 @@ def ask_text(root: tk.Misc, dpi: float, title: str, fields: list[str], ok: str, 
     outer.pack()
     inner = tk.Frame(outer, bg=card, padx=round(22 * k), pady=round(18 * k))
     inner.pack()
-    tk.Label(inner, text=title, bg=card, fg=_hex(T["text"]), font=("Microsoft JhengHei UI", 13, "bold"),
-             anchor="w").pack(fill="x")
-    tk.Frame(inner, bg=_hex(T["accent"]), height=max(2, round(3 * k)), width=round(36 * k)).pack(
-        anchor="w", pady=(round(6 * k), round(10 * k)))
+    _title_row(inner, card, title, T, k, round(440 * k))
+    _underline(inner, card, T, k)
     entries = []
     for label in fields:
         tk.Label(inner, text=label, bg=card, fg=_hex(T["text"]), font=("Microsoft JhengHei UI", 10),

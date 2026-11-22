@@ -792,6 +792,57 @@ def draw_duck(d: ImageDraw.ImageDraw, cx: float, cy: float, r: float, body=(255,
     d.ellipse((cx - r * .55, cy + r * .05, cx - r * .2, cy + r * .32), fill=(250, 160, 170))
 
 
+def draw_heart(d: ImageDraw.ImageDraw, cx: float, cy: float, r: float, fill, outline=None, width=0):
+    """一顆愛心（主題裝飾用）。"""
+    d.ellipse((cx - r, cy - r * .75, cx + r * .05, cy + r * .3), fill=fill)
+    d.ellipse((cx - r * .05, cy - r * .75, cx + r, cy + r * .3), fill=fill)
+    d.polygon([(cx - r * .97, cy - r * .1), (cx + r * .97, cy - r * .1), (cx, cy + r * 1.05)], fill=fill)
+    if outline:
+        d.arc((cx - r, cy - r * .75, cx + r * .05, cy + r * .3), 140, 360, fill=outline, width=width)
+        d.arc((cx - r * .05, cy - r * .75, cx + r, cy + r * .3), 180, 40, fill=outline, width=width)
+
+
+def draw_star(d: ImageDraw.ImageDraw, cx: float, cy: float, r: float, fill):
+    """四角小星星（主題底紋用）。"""
+    d.polygon([(cx, cy - r), (cx + r * .28, cy - r * .28), (cx + r, cy), (cx + r * .28, cy + r * .28),
+               (cx, cy + r), (cx - r * .28, cy + r * .28), (cx - r, cy), (cx - r * .28, cy - r * .28)], fill=fill)
+
+
+def draw_bow(d: ImageDraw.ImageDraw, cx: float, cy: float, r: float, fill, edge):
+    """蝴蝶結（主題角落裝飾）：兩片圓翅膀、中間一顆結、兩條垂下的帶子。"""
+    w = max(1, round(r * .12))
+    for side in (-1, 1):
+        d.polygon([(cx + side * r * .2, cy + r * .1), (cx + side * r * .55, cy + r * 1.05),
+                   (cx + side * r * .75, cy + r * .85), (cx + side * r * .45, cy + r * .05)], fill=fill, outline=edge)
+        d.ellipse((cx + side * r * .15 - (r * .9 if side < 0 else 0), cy - r * .55,
+                   cx + side * r * .15 + (r * .9 if side > 0 else 0), cy + r * .45), fill=fill, outline=edge, width=w)
+    d.ellipse((cx - r * .28, cy - r * .3, cx + r * .28, cy + r * .25), fill=_mix(fill, edge, .25), outline=edge, width=w)
+
+
+def draw_pattern(d: ImageDraw.ImageDraw, box, color, unit: float, seed: int = 7, duck=None):
+    """很淡的底紋：散落的小愛心和小星星，給了 duck 顏色就偶爾放一隻小鴨。位置固定，不會每次重畫都跳。"""
+    import random
+    x0, y0, x1, y1 = box
+    rnd = random.Random(seed)
+    step = 34 * unit
+    y = y0 + step * .6
+    row = 0
+    while y < y1 - 8 * unit:
+        x = x0 + step * (.5 if row % 2 else 1.0)
+        while x < x1 - 8 * unit:
+            kind = rnd.random()
+            jx, jy = rnd.uniform(-6, 6) * unit, rnd.uniform(-6, 6) * unit
+            if kind < .45:
+                draw_heart(d, x + jx, y + jy, 3.2 * unit, color)
+            elif kind < .93 or duck is None:   # 小鴨少一點，不要搶文字
+                draw_star(d, x + jx, y + jy, 3.4 * unit, color)
+            else:
+                draw_duck(d, x + jx, y + jy, 3.6 * unit, body=duck)
+            x += step
+        y += step * .8
+        row += 1
+
+
 def bubble_image(text: str, name: str, shown: int, caret: bool, scale: float, chroma: tuple,
                  tail_x: int | None = None, palette: dict | None = None) -> Image.Image:
     """像遊戲對話框的泡泡：粗框、底色、左上角名牌、指向寵物的尾巴。
@@ -811,6 +862,14 @@ def bubble_image(text: str, name: str, shown: int, caret: bool, scale: float, ch
     r = 10 * scale * k
     d.rounded_rectangle((bw / 2, top, w * k - bw / 2, bottom), r, fill=p["bg"], outline=p["edge"], width=bw)
     inset = 4 * scale * k
+    if p.get("pattern"):  # 很淡的底紋（自訂主題可以開）
+        layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw_pattern(ImageDraw.Draw(layer), (inset, top + inset, w * k - inset, bottom - inset),
+                     _mix(p["bg"], p["accent"], .16), scale * k, seed=len(text),
+                     duck=_mix(p["bg"], (255, 210, 64), .3) if p.get("deco") == "duck" else None)
+        mask = Image.new("L", img.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle((inset, top + inset, w * k - inset, bottom - inset), r * .6, fill=255)
+        img.paste(layer, (0, 0), Image.composite(layer.getchannel("A"), mask, mask))
     d.rounded_rectangle((inset, top + inset, w * k - inset, bottom - inset), r * .6, outline=p["inner"],
                         width=max(1, round(1.2 * scale * k)))
     # 尾巴：指向寵物（對話框被擠到寵物旁邊時 tail_x 是負的，就不畫）
@@ -844,7 +903,12 @@ def bubble_image(text: str, name: str, shown: int, caret: bool, scale: float, ch
     if caret:
         cx, cy = w * k - 16 * scale * k, bottom - 12 * scale * k
         s = 4 * scale * k
-        d.polygon([(cx - s, cy - s * .6), (cx + s, cy - s * .6), (cx, cy + s * .7)], fill=p["accent"])
+        if p.get("check") == "heart":  # 主題把勾勾換成愛心時，閃爍的 ▼ 也是一顆愛心
+            draw_heart(d, cx, cy - s * .2, s * 1.1, p["accent"])
+        else:
+            d.polygon([(cx - s, cy - s * .6), (cx + s, cy - s * .6), (cx, cy + s * .7)], fill=p["accent"])
+    if p.get("bow"):  # 右上角一個蝴蝶結
+        draw_bow(d, w * k - 18 * scale * k, top + 3 * scale * k, 9 * scale * k, p["accent"], p["edge"])
     small = img.resize((w, h), Image.LANCZOS)
     alpha = small.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
     out = Image.new("RGB", small.size, chroma)

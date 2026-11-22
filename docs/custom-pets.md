@@ -71,12 +71,20 @@ The menus, dialogs and speech bubble can take your own colors. Put a `themes.jso
     "label": "Duckling",
     "bg": [255, 241, 247], "edge": [234, 112, 154], "accent": [240, 100, 146],
     "hover": [255, 225, 237], "text": [92, 38, 62],
-    "deco": "duck", "mark": "x‿x"
+    "deco": "duck", "mark": "x‿x",
+    "pattern": true, "check": "heart", "divider": "hearts", "bow": true
   }
 }
 ```
 
-Colors you leave out come from the default theme. The keys are `bg`, `edge`, `edge_w` (border width), `inner` (inner line), `hover`, `text`, `faint` (disabled text), `accent` (name tag, check marks, primary button), `tag_text` and `sep`. `deco: "duck"` puts a little duck on the name tags and uses it as the selected mark; `mark` is a short text in the menus' bottom-right corner.
+Colors you leave out come from the default theme. The keys are `bg`, `edge`, `edge_w` (border width), `inner` (inner line), `hover`, `text`, `faint` (disabled text), `accent` (name tag, check marks, primary button), `tag_text` and `sep` (divider color). Decorations, all optional:
+
+- `deco: "duck"`: a little duck on the name tags, as the selected mark, and in the menus' bottom-left corner
+- `mark`: a short text in the menus' bottom-right corner
+- `pattern: true`: a faint background of hearts and stars (and a few ducks with `deco: "duck"`)
+- `check: "heart"`: hearts instead of check marks, and a heart as the speech bubble's "more" sign
+- `divider: "hearts"`: dotted dividers with a heart in the middle
+- `bow: true`: a bow on the top-right corner of menus and speech bubbles
 
 ---
 
@@ -124,5 +132,9 @@ Colors you leave out come from the default theme. The keys are `bg`, `edge`, `ed
 選單、對話框和寵物的對話泡泡都可以換成你自己的顏色。在同一個 `pets` 資料夾放一個 `themes.json`（格式見上面英文段落的範例），它就會出現在「外觀與語言 → 主題」。
 
 - 沒寫的顏色沿用預設主題。
-- `deco: "duck"` 會在名牌上放一隻小鴨，選中的項目也會變成小鴨。
+- `deco: "duck"`：名牌上放一隻小鴨，選中的項目和選單左下角也是小鴨。
+- `pattern: true`：很淡的愛心、星星底紋（有 `deco: "duck"` 時還會偶爾出現小鴨）。
+- `check: "heart"`：勾勾換成愛心，對話框右下角閃爍的記號也變成愛心。
+- `divider: "hearts"`：分隔線換成一排小點，中間一顆愛心。
+- `bow: true`：選單和對話框右上角加一個蝴蝶結。
 - `mark` 是選單右下角的一小段字。
