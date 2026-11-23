@@ -145,11 +145,25 @@ def _work_area(root: tk.Misc) -> tuple[int, int, int, int]:
         return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight()
 
 
-def _raise(win: tk.Toplevel):
+def _hwnd(win: tk.Toplevel) -> int:
+    u = ctypes.windll.user32
+    return u.GetParent(win.winfo_id()) or win.winfo_id()
+
+
+def _raise_chain(wins: list[tk.Toplevel]):
+    """把一串選單拉到最上層：最深的子選單放最上面，每一層往下緊貼著下一層。
+
+    以前是從最外層開始一個一個拉到最上面，拉父選單的那一瞬間它會蓋過子選單，
+    兩個重疊的地方就一直閃。現在父選單只會被放在子選單「下面」，永遠不會跑到上面去。
+    """
     try:
         u = ctypes.windll.user32
-        hwnd = u.GetParent(win.winfo_id()) or win.winfo_id()
-        u.SetWindowPos(hwnd, ctypes.c_void_p(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # TOPMOST, no move/size/activate
+        flags = 0x0001 | 0x0002 | 0x0010  # 不動位置、不動大小、不搶焦點
+        above = ctypes.c_void_p(-1)        # HWND_TOPMOST
+        for win in reversed(wins):
+            h = _hwnd(win)
+            u.SetWindowPos(h, above, 0, 0, 0, 0, flags)
+            above = ctypes.c_void_p(h)
     except Exception:
         pass
 
@@ -181,6 +195,7 @@ class FancyMenu:
         self.title = title
         self.child: FancyMenu | None = None
         self.child_row: int | None = None
+        self._armed = False   # 叫出選單的那一下放開之後，才開始認「點了外面」
         self.hot: int | None = None
         self._job = None
         self.t = theme()
@@ -202,7 +217,7 @@ class FancyMenu:
         elif y + self.h > bottom:            # 子選單放不下：底部對齊游標那一列，往上長
             y = (align_bottom if align_bottom is not None else bottom) - self.h
         if x + self.w > right:
-            x = (parent.x - self.w + round(6 * dpi)) if parent else right - self.w
+            x = (parent.x - self.w - round(2 * dpi)) if parent else right - self.w
         self.x, self.y = max(left, x), max(top, min(y, bottom - self.h))
         self.avoid = avoid
         if avoid:
@@ -396,7 +411,7 @@ class FancyMenu:
         sub = it["submenu"]() if callable(it["submenu"]) else it["submenu"]
         a, b = self.rows[row]
         self.child_row = row
-        self.child = FancyMenu(self.root, self.k, sub, self.x + self.w - round(8 * self.k),
+        self.child = FancyMenu(self.root, self.k, sub, self.x + self.w + round(2 * self.k),
                                self.y + round(a - PAD * self.k), parent=self,
                                align_bottom=self.y + round(b + PAD * self.k), avoid=self.avoid)
         self._paint()
@@ -432,9 +447,13 @@ class FancyMenu:
             return
         # 寵物、卡片、橫條每 0.25 秒會把自己拉回最上層；選單開著時也要一直搶回來，
         # 不然開在寵物身上的子選單會被蓋到後面，看起來像沒打開
-        for m in self._windows():
-            _raise(m.win)
-        if _mouse_down():
+        _raise_chain([m.win for m in self._windows()])
+        # 只認「選單出現之後才按下去」的那一下：右鍵叫出選單時，手指可能還按著右鍵，
+        # 而選單開在寵物旁邊、游標不在選單上，以前就會被當成「點了外面」立刻關掉
+        down = _mouse_down()
+        if not down:
+            self._armed = True
+        elif self._armed:
             x, y = _cursor()
             if not any(m.x <= x < m.x + m.w and m.y <= y < m.y + m.h for m in self._windows()):
                 self.close_all()
