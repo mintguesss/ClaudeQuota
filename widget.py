@@ -1321,6 +1321,8 @@ class MiniWindow(FloatWindow):
 CLAUDE_SETTINGS = os.path.expanduser("~/.claude/settings.json")
 PET_POLL_MS = 2000      # 多久看一次 Claude Code 的狀態
 PET_BUBBLE_MS = 7000
+PET_NEWS_MS = 10000     # 「做完了」「出錯了」自己冒出來時停多久
+PET_WAITING_MS = 14000  # 「在等你允許」比較要緊，停久一點
 PET_AWAKE_SEC = 90      # 叫醒之後醒著多久才又睡回去
 PET_DONE_MIN_SEC = 30   # 做了至少這麼久才報「做完了」
 PET_SIZES = (1.0, 1.5, 2.0, 3.0)
@@ -1785,7 +1787,7 @@ class PetWindow(FloatWindow):
         news = self._news(claude_state.last_sessions)
         if news:
             text = self._say_one(news)
-            self.say(text, PET_BUBBLE_MS * (2 if news.kind == "waiting" else 1), [news.link])
+            self.say(text, PET_WAITING_MS if news.kind == "waiting" else PET_NEWS_MS, [news.link])
             if self.on_alert:
                 self.on_alert(text)
             if self.auto_jump and news.kind in ("waiting", "done") and news.link:
