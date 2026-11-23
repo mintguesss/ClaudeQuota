@@ -79,6 +79,38 @@ with tempfile.TemporaryDirectory() as d:
     check(best.kind == "waiting" and best.project == "b", "the session waiting for you comes first")
     check([s.project for s in cs.last_sessions] == ["b", "a", "c"], "every active session is listed, most urgent first")
 
+# A session you named is called by that name, not by its folder.
+with tempfile.TemporaryDirectory() as d:
+    os.makedirs(os.path.join(d, "p"))
+    path = os.path.join(d, "p", "s.jsonl")
+
+    def write(*entries, partial=""):
+        with open(path, "a", encoding="utf-8") as fh:
+            for e in entries:
+                fh.write(json.dumps(e, ensure_ascii=False) + "\n")
+            fh.write(partial)
+
+    def named():
+        real_projects = cs.PROJECTS
+        cs.PROJECTS = d
+        best = cs.current(now=NOW)
+        cs.PROJECTS = real_projects
+        return best.project
+
+    write(user(5, "go"))
+    check(named() == "shop-api", "a session you never named is called by its folder")
+    write({"type": "custom-title", "customTitle": "結帳流程", "sessionId": "x"},
+          *[user(5, "go")] * 300)  # the name sits far from the end of the file
+    check(named() == "結帳流程", "a session you named is called by that name")
+    write(user(4, "more"), partial='{"type":"custom-title","customTitle":"半')
+    check(named() == "結帳流程", "a half-written line is ignored until it's finished")
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write('行"}\n')
+    check(named() == "半行", "renaming the session picks up the new name")
+    write({"type": "custom-title", "customTitle": "x" * 40})
+    check(len(named()) == cs.TITLE_MAX and named().endswith("…"), "a long name is shortened")
+    check(cs.session_title(os.path.join(d, "missing.jsonl")) == "", "a missing file has no name")
+
 with tempfile.TemporaryDirectory() as d:
     f = os.path.join(d, "n.json")
     with open(f, "w", encoding="utf-8") as fh:

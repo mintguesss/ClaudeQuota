@@ -4,7 +4,8 @@
 
 1. 對話紀錄（預設，免設定）：~/.claude/projects/<專案>/<對話>.jsonl。
    CLI、VS Code 擴充功能和桌面版的 Code 分頁都會寫這裡，所以三種都抓得到。
-   只讀最近幾分鐘有動過的檔案的結尾，不讀內容文字，只看每一筆的種類和時間。
+   只讀最近幾分鐘有動過的檔案的結尾，不讀內容文字，只看每一筆的種類和時間，
+   外加你幫對話取的名稱（custom-title 那幾行），用來稱呼它。
    限制：「在等你按允許」紀錄裡看不出來，只能用「工具呼叫送出後很久沒結果」來猜，
    跑很久的指令也會被猜成在等你。
 2. Claude Code 的 Notification hook（選用）：需要你允許時 Claude Code 會呼叫 hook，
@@ -27,6 +28,7 @@ ERROR_SEC = 5 * 60
 THINK_SEC = 10 * 60     # 送出之後這麼久都沒回應，大概是被關掉了，不算工作中
 WAIT_GUESS_SEC = 20     # 工具呼叫送出後這麼久沒結果，猜是在等你按允許
 TAIL_BYTES = 96 * 1024
+TITLE_MAX = 24          # 對話名稱太長就截斷，免得對話框被撐開
 
 # 會跳出允許提示的工具。Read / Grep 這類唯讀工具預設不用問，跑久了也不是在等你。
 ASKS_PERMISSION = ("Bash", "PowerShell", "Edit", "MultiEdit", "Write", "NotebookEdit", "WebFetch", "mcp__")
@@ -38,7 +40,7 @@ PRIORITY = {"waiting": 4, "error": 3, "working": 2, "done": 1, "idle": 0}
 @dataclass
 class State:
     kind: str                     # waiting / error / working / done / idle
-    project: str = ""             # 對話所在資料夾的名字
+    project: str = ""             # 你幫對話取的名稱；沒取過就是對話所在資料夾的名字
     since: float = 0.0            # 這個狀態從什麼時候開始（epoch 秒）
     guessed: bool = False         # waiting 是猜的（沒裝 hook）
     others: int = 0               # 另外還有幾個對話在跑
@@ -77,6 +79,46 @@ def _tail_entries(path: str) -> list[dict]:
         if isinstance(j, dict) and j.get("type") in ("user", "assistant") and not j.get("isSidechain"):
             out.append(j)
     return out
+
+
+_titles: dict[str, tuple[int, str]] = {}  # 紀錄檔路徑 → (讀到第幾個 byte, 名稱)
+
+
+def session_title(path: str) -> str:
+    """你幫這個對話取的名稱（桌面版改名或 /rename），沒取過就是空字串。
+
+    名稱可能寫在檔案的任何位置，所以第一次會從頭找；讀過的部分記住，之後只讀新增的幾行。
+    只解析含 custom-title 的那幾行。
+    """
+    done, title = _titles.get(path, (0, ""))
+    try:
+        size = os.path.getsize(path)
+        if size < done:  # 檔案被重寫過，從頭來
+            done, title = 0, ""
+        if size == done:
+            return title
+        with open(path, "rb") as f:
+            f.seek(done)
+            for line in f:
+                if not line.endswith(b"\n"):
+                    break  # 最後一行可能還沒寫完，下次再讀
+                done += len(line)
+                if b'"custom-title"' not in line:
+                    continue
+                try:
+                    j = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(j, dict) and j.get("type") == "custom-title":
+                    title = " ".join(str(j.get("customTitle") or "").split())
+    except OSError:
+        return title
+    _titles[path] = (done, title)
+    return title
+
+
+def _short(name: str) -> str:
+    return name if len(name) <= TITLE_MAX else name[:TITLE_MAX - 1].rstrip() + "…"
 
 
 def _content(entry: dict) -> list:
@@ -181,10 +223,14 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
             s = session_state(entries, now, mine, guess_waiting=hook_file is None)
             if s:
                 s.key = f.path
+                title = session_title(f.path)
+                if title:
+                    s.project = _short(title)
                 states.append(s)
     # 不再活躍的檔案不用留在快取裡
-    for path in [p for p in _cache if not os.path.exists(p)]:
-        del _cache[path]
+    for cache in (_cache, _titles):
+        for path in [p for p in cache if not os.path.exists(p)]:
+            del cache[path]
     busy = sorted((s for s in states if s.kind != "idle"), key=lambda s: (PRIORITY[s.kind], s.since), reverse=True)
     global last_sessions
     last_sessions = busy  # 每個有在動的對話，最需要你注意的排前面（點寵物時列出來）

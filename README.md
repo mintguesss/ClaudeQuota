@@ -68,11 +68,11 @@ Pick one under **Icon style** in the tray menu. The colour follows your 5-hour u
 
 ### Desktop pet
 
-A little creature that shows what Claude Code is up to, so you can look away while it works and still know when it needs you. It reads Claude Code's session logs (only the type and time of each entry, never the content), so it sees the CLI, the VS Code extension and the desktop app's Code tab with no setup.
+A little creature that shows what Claude Code is up to, so you can look away while it works and still know when it needs you. It reads Claude Code's session logs (only the type and time of each entry and the name you gave the session, never the content), so it sees the CLI, the VS Code extension and the desktop app's Code tab with no setup.
 
 <img src="docs/pet-en.png" alt="Slime, ginger cat, little ghost, chick, penguin, robot, bunny, frog and bear, each working, waiting for you, done, with an error, asleep and woken up">
 
-- **Click it** and a game-style dialog says which project is doing what; click the dialog to close it. It also speaks up on its own when Claude is waiting, done, or hits an error.
+- **Click it** and a game-style dialog says which session is doing what (by the name you gave it, or its folder if you didn't); click the dialog to close it. It also speaks up on its own when Claude is waiting, done, or hits an error.
 - **Asleep?** Click it to wake it up for a while.
 - **Right-click the pet** to wake it up any time, set its state by hand (back to automatic whenever you like), toggle its music, resize it or hide it.
 - **Drag it** anywhere, in any mode. Off the mini bar it stays where you drop it; on the taskbar walk it carries on from there.
@@ -153,11 +153,11 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 
 ### 桌面寵物
 
-讓你在 Claude 跑的時候可以去做別的事，看一眼就知道它是不是在等你。它讀 Claude Code 的對話紀錄（只看每一筆的種類和時間，不讀內容），所以 CLI、VS Code 擴充功能、桌面版的 Code 分頁都抓得到，不用設定。
+讓你在 Claude 跑的時候可以去做別的事，看一眼就知道它是不是在等你。它讀 Claude Code 的對話紀錄（只看每一筆的種類和時間，以及你幫對話取的名稱，不讀內容），所以 CLI、VS Code 擴充功能、桌面版的 Code 分頁都抓得到，不用設定。
 
 <img src="docs/pet-zh.png" alt="史萊姆、橘貓、小幽靈、小雞、企鵝、機器人、兔子、青蛙、小熊，各自的工作中、在等你、做完了、出錯了、睡覺、被叫醒">
 
-- **點一下**會跳出遊戲風對話框，說明哪個專案在做什麼；再點對話框就關掉。在等你、做完、出錯時也會自己冒出來講。
+- **點一下**會跳出遊戲風對話框，說明哪個對話在做什麼（用你取的名稱，沒取過就用資料夾名）；再點對話框就關掉。在等你、做完、出錯時也會自己冒出來講。
 - **睡著了？** 點它一下就會醒來陪你一陣子。
 - **在寵物身上按右鍵**：隨時叫醒、手動改變狀態（隨時可以設回自動）、音樂開關、調大小、隱藏。
 - **可以拖**，哪種模式都行：從橫條上拖下來就停在你放的地方；散步模式會從放下的地方繼續走。
