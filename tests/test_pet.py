@@ -111,6 +111,29 @@ with tempfile.TemporaryDirectory() as d:
     check(len(named()) == cs.TITLE_MAX and named().endswith("…"), "a long name is shortened")
     check(cs.session_title(os.path.join(d, "missing.jsonl")) == "", "a missing file has no name")
 
+# A session named in the desktop app's sidebar is called by that name; /rename still wins.
+with tempfile.TemporaryDirectory() as d:
+    proj = os.path.join(d, "projects", "p")
+    os.makedirs(proj)
+    with open(os.path.join(proj, "abc-123.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(user(5, "go")) + "\n")
+    meta = os.path.join(d, "desktop", "acct", "org")
+    os.makedirs(meta)
+    with open(os.path.join(meta, "local_1.json"), "w", encoding="utf-8") as fh:
+        json.dump({"cliSessionId": "abc-123", "title": "Skills 製作", "titleSource": "auto"}, fh, ensure_ascii=False)
+    real = cs.PROJECTS, cs.DESKTOP_SESSIONS, dict(cs._desktop)
+    cs.PROJECTS, cs.DESKTOP_SESSIONS = os.path.join(d, "projects"), [os.path.join(d, "desktop")]
+    cs._desktop.update(at=0.0, files={}, titles={}, busy=False)
+    cs.desktop_titles(wait=True)
+    check(cs.current(now=NOW).project == "Skills 製作", "a session named in the desktop app uses that name")
+    with open(os.path.join(proj, "abc-123.jsonl"), "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "custom-title", "customTitle": "結帳"}, ensure_ascii=False) + "\n")
+        fh.write(json.dumps(user(4, "more")) + "\n")
+    check(cs.current(now=NOW).project == "結帳", "a /rename name wins over the desktop app's name")
+    cs.PROJECTS, cs.DESKTOP_SESSIONS = real[0], real[1]
+    cs._desktop.clear()
+    cs._desktop.update(real[2])
+
 with tempfile.TemporaryDirectory() as d:
     f = os.path.join(d, "n.json")
     with open(f, "w", encoding="utf-8") as fh:

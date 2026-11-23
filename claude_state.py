@@ -117,6 +117,77 @@ def session_title(path: str) -> str:
     return title
 
 
+# 桌面版 Code 分頁替每個對話存的資料：側邊欄上看到的名稱（自動取的或你改的）就在這裡，
+# 不在紀錄檔裡。cliSessionId 就是紀錄檔的檔名，用它對回去。
+DESKTOP_SESSIONS = [
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Claude-Data", "*", "claude-code-sessions"),
+    os.path.join(os.environ.get("APPDATA", ""), "Claude", "claude-code-sessions"),
+    os.path.expanduser("~/Library/Application Support/Claude/claude-code-sessions"),  # macOS
+]
+DESKTOP_SCAN_SEC = 10
+_desktop: dict = {"at": 0.0, "files": {}, "titles": {}, "busy": False}  # files: 路徑 → (修改時間, [(id, 名稱)])
+
+
+def desktop_titles(now: Optional[float] = None, wait: bool = False) -> dict[str, str]:
+    """紀錄檔 id → 桌面版側邊欄上的對話名稱。
+
+    每個檔案有 400 KB 上下，第一次讀可能要一秒，所以在背景執行緒重掃，這裡直接回上一次的結果
+    （寵物晚兩秒才換上名稱，總比畫面卡住好）。每 10 秒最多重掃一次，沒變的檔案不重讀。
+    wait=True 時同步掃完再回傳（測試用）。
+    """
+    import threading
+
+    now = now or time.time()
+    if now - _desktop["at"] >= DESKTOP_SCAN_SEC and not _desktop["busy"]:
+        _desktop["at"] = now
+        _desktop["busy"] = True
+        if wait:
+            _scan_desktop()
+        else:
+            threading.Thread(target=_scan_desktop, daemon=True).start()
+    return _desktop["titles"]
+
+
+def _scan_desktop():
+    try:
+        _scan_desktop_files()
+    finally:
+        _desktop["busy"] = False  # 出了什麼意外也要能再掃下一次
+
+
+def _scan_desktop_files():
+    import glob
+
+    files = {}
+    for base in DESKTOP_SESSIONS:
+        for path in glob.glob(os.path.join(base, "*", "*", "*.json")):
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            cached = _desktop["files"].get(path)
+            if cached and cached[0] == mtime:
+                files[path] = cached
+                continue
+            pairs = []
+            try:
+                with open(path, encoding="utf-8") as f:
+                    d = json.load(f)
+                title = " ".join(str(d.get("title") or "").split())
+                if title:
+                    for key in ("cliSessionId", "lastAssistantCliSessionId"):
+                        if d.get(key):
+                            pairs.append((str(d[key]), title))
+            except (OSError, ValueError, AttributeError):
+                pass
+            files[path] = (mtime, pairs)
+    # 修改時間舊的先放、新的後放：同一個紀錄檔被兩個對話用到時，以最近動過的那個為準
+    titles = {}
+    for _mtime, pairs in sorted(files.values(), key=lambda x: x[0]):
+        titles.update(pairs)
+    _desktop["files"], _desktop["titles"] = files, titles  # 一次換掉，讀的那邊不會看到一半
+
+
 def _short(name: str) -> str:
     return name if len(name) <= TITLE_MAX else name[:TITLE_MAX - 1].rstrip() + "…"
 
@@ -223,7 +294,8 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
             s = session_state(entries, now, mine, guess_waiting=hook_file is None)
             if s:
                 s.key = f.path
-                title = session_title(f.path)
+                # 名稱的優先順序：/rename 取的 → 桌面版側邊欄上的名稱 → 資料夾名
+                title = session_title(f.path) or desktop_titles(now).get(f.name[:-len(".jsonl")], "")
                 if title:
                     s.project = _short(title)
                 states.append(s)

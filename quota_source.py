@@ -422,6 +422,10 @@ def _find_usage_files(force: bool = False) -> list[str]:
             name = os.path.basename(path).lower()
             if any(k in name for k in ("plan-usage", "usage-history", "usage", "quota", "rate-limit")):
                 found.append(path)
+    # 2026-11 起 Windows 版把資料搬到 %LOCALAPPDATA%\Claude-Data\<套件名>\，舊位置只留一個
+    # .user-data-left 標記檔。新資料夾裡有好幾 GB 的 VM 映像，不能整個遞迴掃，只看最上層的已知檔名。
+    found += [p for p in glob.glob(os.path.join(_LOCAL, "Claude-Data", "*", "plan-usage-history.json"))
+              if os.path.isfile(p)]
     # 新的排前面
     found = sorted(found, key=lambda p: os.path.getmtime(p), reverse=True)
     _scan_cache = (now, found)
