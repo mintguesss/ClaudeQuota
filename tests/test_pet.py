@@ -130,6 +130,15 @@ with tempfile.TemporaryDirectory() as d:
         fh.write(json.dumps({"type": "custom-title", "customTitle": "結帳"}, ensure_ascii=False) + "\n")
         fh.write(json.dumps(user(4, "more")) + "\n")
     check(cs.current(now=NOW).project == "結帳", "a /rename name wins over the desktop app's name")
+    check(cs.current(now=NOW).link == "", "a session that isn't the desktop app's or VS Code's has nothing to jump to")
+    vs = "11111111-2222-3333-4444-555555555555"
+    with open(os.path.join(proj, vs + ".jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(dict(user(5, "go"), entrypoint="claude-vscode", cwd=d)) + "\n")
+    cs.current(now=NOW)
+    vs_state = [x for x in cs.last_sessions if x.key.endswith(vs + ".jsonl")]
+    check(vs_state and vs_state[0].link == f"vscode:{vs}|{d}", "a VS Code session jumps through VS Code to its folder")
+    check(not cs.open_session("vscode:not-a-uuid|" + d) and not cs.open_session("local_bad id"),
+          "anything that isn't a real session id is never opened")
     cs.PROJECTS, cs.DESKTOP_SESSIONS = real[0], real[1]
     cs._desktop.clear()
     cs._desktop.update(real[2])

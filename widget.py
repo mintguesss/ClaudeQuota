@@ -1364,10 +1364,15 @@ class Bubble:
     def open(self) -> bool:
         return self.win is not None
 
-    def show(self, text: str, name: str, ms: int, anchor):
-        """anchor() 回傳寵物中心 x 與頭頂 y，對話框放在它上面，尾巴指向它。"""
+    def show(self, text: str, name: str, ms: int, anchor, links: list | None = None):
+        """anchor() 回傳寵物視窗的範圍，對話框放在它上面，尾巴指向它。
+
+        links 跟 text 的每一段（換行分開）對應：那一段講的對話在桌面版裡的 id，點那一段就跳過去；
+        沒有的放空字串。只有一段時，點整個對話框都算。
+        """
         self.close()
         self.text, self.name, self._shown = text, name, 0
+        self.links = links or []
         self._anchor = anchor
         w = tk.Toplevel(self.root)
         w.overrideredirect(True)
@@ -1378,7 +1383,7 @@ class Bubble:
             pass
         self.label = tk.Label(w, bd=0, bg=CHROMA, cursor="hand2")
         self.label.pack()
-        self.label.bind("<Button-1>", lambda _e: self.close())
+        self.label.bind("<Button-1>", self._click)
         self.win = w
         make_tool_window(window_handle(w))
         self.place()
@@ -1402,6 +1407,29 @@ class Bubble:
             self._tail = tail
             self._paint()
         self.win.geometry(f"{bw}x{bh}+{x}+{y}")
+
+    def _link_at(self, y: int) -> str:
+        """游標在第幾段：照 pet.bubble_image 的排版算（名牌 12、第一行從 28 開始、每行 20，都乘上縮放）。"""
+        if not any(self.links):
+            return ""
+        paras = self.text.split("\n")
+        if len(paras) == 1:
+            return self.links[0] if self.links else ""
+        font = pet._font(round(13 * self.dpi))
+        line = int((y / self.dpi - 28) // 20)
+        for i, para in enumerate(paras):
+            n = len(pet._wrap(para, font, pet.BUBBLE_W * self.dpi))
+            if line < n:
+                return self.links[i] if i < len(self.links) else ""
+            line -= n
+        return ""
+
+    def _click(self, e):
+        """點到某個對話的那一行：叫桌面版打開它。點其他地方：關掉對話框。"""
+        link = self._link_at(e.y)
+        self.close()
+        if link:
+            claude_state.open_session(link)
 
     def _paint(self):
         done = self._shown >= len(self.text)
@@ -1476,6 +1504,8 @@ class PetWindow(FloatWindow):
         self.on_alert = None           # Claude 需要你時通知外面（例如發 Windows 通知）
         self._work_start: dict = {}    # 每個對話這次從什麼時候開始工作
         self._told: set = set()        # 已經講過的事件，不重講
+        self.last_links: list = []     # describe() 每一行對應的對話（點了可以跳過去）
+        self.auto_jump = bool(st.get("auto_jump", False))  # 做完或需要回覆時自動切回那個對話
         self.bubble = Bubble(root, dpi)
         self.forced: str | None = None  # 右鍵選單手動指定的狀態
         self.label.bind("<Button-3>", self._context)
@@ -1619,7 +1649,7 @@ class PetWindow(FloatWindow):
             self.wake()
         else:
             text = self.describe(full=True)
-            self.say(text, PET_BUBBLE_MS + 1500 * text.count("\n"))  # 列得越多，留越久
+            self.say(text, PET_BUBBLE_MS + 1500 * text.count("\n"), self.last_links)  # 列得越多，留越久
 
     def _hover(self, e):
         pass
@@ -1711,7 +1741,9 @@ class PetWindow(FloatWindow):
                 lines.append(f"• {x.project or 'Claude'}{sep}{label}" + (t("pet.say.mins", min=mins) if mins else ""))
             if len(sessions) > 6:
                 lines.append(t("pet.say.more", n=len(sessions) - 6))
+            self.last_links = [""] + [x.link for x in sessions[:6]] + [""]  # 跟每一行對應，點了可以跳過去
             return "\n".join(lines)
+        self.last_links = [s.link]
         who = s.project or "Claude"
         kind = s.kind
         if kind == "idle" and self.shown_state() in ("awake", "held"):
@@ -1753,9 +1785,15 @@ class PetWindow(FloatWindow):
         news = self._news(claude_state.last_sessions)
         if news:
             text = self._say_one(news)
-            self.say(text, PET_BUBBLE_MS * (2 if news.kind == "waiting" else 1))
+            self.say(text, PET_BUBBLE_MS * (2 if news.kind == "waiting" else 1), [news.link])
             if self.on_alert:
                 self.on_alert(text)
+            if self.auto_jump and news.kind in ("waiting", "done") and news.link:
+                # 做完或需要回覆：直接切回那個對話。沒人點，Windows 不讓對方自己跳到前面，所以另外拉一次
+                if claude_state.open_session(news.link):
+                    vscode = news.link.startswith("vscode:")
+                    claude_state.bring_forward("vscode" if vscode else "desktop", news.cwd,
+                                               delay=claude_state.VSCODE_OPEN_DELAY + 1.5 if vscode else 1.5)
         self._poll = self.root.after(PET_POLL_MS, self.poll)
 
     def _news(self, sessions):
@@ -1877,6 +1915,11 @@ class PetWindow(FloatWindow):
         threading.Thread(target=work, daemon=True).start()
 
     # ── 音樂（自訂角色在 pet.json 設定，例如跳舞時播歌） ──
+    def set_auto_jump(self, on: bool):
+        self.auto_jump = on
+        save_state(auto_jump=on)
+        self.say(t("pet.auto_jump_on") if on else t("pet.auto_jump_off"), PET_BUBBLE_MS)
+
     def set_music(self, on: bool):
         self.music_on = on
         save_state(pet_music=on)
@@ -1965,9 +2008,9 @@ class PetWindow(FloatWindow):
         self._music_for = None
         self._stop_music()
 
-    def say(self, text: str, ms: int):
+    def say(self, text: str, ms: int, links: list | None = None):
         if self.visible and not self._suspended:
-            self.bubble.show(text, self.display_name(), ms, self._head)
+            self.bubble.show(text, self.display_name(), ms, self._head, links)
 
     def render(self, q):
         pass  # 寵物不看額度
@@ -2493,6 +2536,8 @@ class App:
                  "command": self.toggle_token_refresh},
                 {"label": t("pet.hook"), "checked": pet.hook_installed(CLAUDE_SETTINGS),
                  "command": self.toggle_pet_hook},
+                {"label": t("pet.auto_jump"), "checked": self.pet.auto_jump,
+                 "command": lambda: self.pet.set_auto_jump(not self.pet.auto_jump)},
             ]},
             "-",
             {"label": t("menu.help"), "command": self.show_help},

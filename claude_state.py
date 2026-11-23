@@ -13,8 +13,10 @@
 """
 from __future__ import annotations
 
+import ctypes
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -45,6 +47,9 @@ class State:
     guessed: bool = False         # waiting 是猜的（沒裝 hook）
     others: int = 0               # 另外還有幾個對話在跑
     key: str = ""                 # 哪個對話（紀錄檔路徑），用來分辨同一個對話的同一次完成
+    link: str = ""                # 點名稱時要打開哪裡（見 open_session）；終端機裡的對話沒有
+    entry: str = ""               # 對話從哪裡開的：claude-desktop / claude-vscode / cli …
+    cwd: str = ""
 
 
 def _ts(entry: dict) -> Optional[float]:
@@ -125,7 +130,8 @@ DESKTOP_SESSIONS = [
     os.path.expanduser("~/Library/Application Support/Claude/claude-code-sessions"),  # macOS
 ]
 DESKTOP_SCAN_SEC = 10
-_desktop: dict = {"at": 0.0, "files": {}, "titles": {}, "busy": False}  # files: 路徑 → (修改時間, [(id, 名稱)])
+_desktop: dict = {"at": 0.0, "files": {}, "titles": {}, "links": {}, "busy": False}
+# files: 路徑 → (修改時間, [(紀錄檔 id, 名稱, 桌面版對話 id)])
 
 
 def desktop_titles(now: Optional[float] = None, wait: bool = False) -> dict[str, str]:
@@ -174,18 +180,148 @@ def _scan_desktop_files():
                 with open(path, encoding="utf-8") as f:
                     d = json.load(f)
                 title = " ".join(str(d.get("title") or "").split())
-                if title:
-                    for key in ("cliSessionId", "lastAssistantCliSessionId"):
-                        if d.get(key):
-                            pairs.append((str(d[key]), title))
+                local = str(d.get("sessionId") or "") if not d.get("isArchived") else ""
+                for key in ("cliSessionId", "lastAssistantCliSessionId"):
+                    if d.get(key):
+                        pairs.append((str(d[key]), title, local))
             except (OSError, ValueError, AttributeError):
                 pass
             files[path] = (mtime, pairs)
     # 修改時間舊的先放、新的後放：同一個紀錄檔被兩個對話用到時，以最近動過的那個為準
-    titles = {}
+    titles, links = {}, {}
     for _mtime, pairs in sorted(files.values(), key=lambda x: x[0]):
-        titles.update(pairs)
-    _desktop["files"], _desktop["titles"] = files, titles  # 一次換掉，讀的那邊不會看到一半
+        for cli, title, local in pairs:
+            if title:
+                titles[cli] = title
+            if local.startswith("local_"):
+                links[cli] = local
+    # 一次換掉，讀的那邊不會看到一半
+    _desktop["files"], _desktop["titles"], _desktop["links"] = files, titles, links
+
+
+_LOCAL_ID = re.compile(r"^local_[A-Za-z0-9-]{1,64}$")  # 跟桌面版自己檢查的格式一樣
+
+
+_UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+VSCODE_OPEN_DELAY = 1.5  # 先叫出那個資料夾的 VS Code 視窗，等它到前面再開對話
+
+
+def open_session(link: str) -> bool:
+    """打開這個對話。link 有兩種：
+
+    - local_…：桌面版 Code 分頁的對話，用桌面版註冊的 claude:// 連結
+    - vscode:<對話 id>|<資料夾>：VS Code 擴充功能裡的對話。VS Code 會把連結交給最後用過的那個視窗，
+      所以先用 vscode://file 叫出那個資料夾的視窗（已經開著就是切過去），再用擴充功能自己的
+      vscode://anthropic.claude-code/open?session= 打開對話
+    """
+    import threading
+
+    link = link or ""
+    try:
+        # Windows 只讓「剛被點過的程式」把別的視窗拉到前面。點寵物對話框的是我們，
+        # 這裡把這個權利讓給任何程式，桌面版和 VS Code 才能自己跳到最前面，不會只在工作列閃
+        ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
+    except (AttributeError, OSError):
+        pass
+    try:
+        if _LOCAL_ID.match(link):
+            os.startfile(f"claude://code/continue?session={link}&source=desktop_action")
+            return True
+        if link.startswith("vscode:"):
+            sid, _, folder = link[len("vscode:"):].partition("|")
+            if not _UUID.match(sid):
+                return False
+            if folder and os.path.isdir(folder):
+                os.startfile("vscode://file/" + folder.replace("\\", "/").rstrip("/") + "/")
+                threading.Timer(VSCODE_OPEN_DELAY, _open_vscode_session, (sid,)).start()
+            else:
+                _open_vscode_session(sid)
+            return True
+    except (OSError, AttributeError):  # AttributeError：不是 Windows
+        return False
+    return False
+
+
+def bring_forward(kind: str, folder: str = "", delay: float = 2.0):
+    """自動切換時把桌面版或 VS Code 的視窗拉到最前面（背景執行緒，等對方先處理完連結）。
+
+    使用者點了寵物對話框時，Windows 允許我們把前景讓給對方；但自動切換沒人點，
+    Windows 只會讓對方在工作列閃一下。這裡找到那個視窗，借用目前前景視窗的輸入佇列
+    （AttachThreadInput）把它叫到前面——Windows 上要從背景把視窗拉到前面的標準做法。
+    kind："desktop" 或 "vscode"（vscode 用資料夾名比對視窗標題）。
+    """
+    import threading
+
+    def work():
+        time.sleep(delay)
+        try:
+            hwnd = _find_window(kind, folder)
+            if hwnd:
+                _force_foreground(hwnd)
+        except Exception:
+            pass
+
+    threading.Thread(target=work, daemon=True).start()
+
+
+def _find_window(kind: str, folder: str) -> int:
+    import ctypes.wintypes as wt
+
+    u, k = ctypes.windll.user32, ctypes.windll.kernel32
+    want_exe = "claude.exe" if kind == "desktop" else "code.exe"
+    name = os.path.basename(folder.rstrip("\\/")).lower()
+    best = [0, 0]
+
+    @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    def each(h, _):
+        if not u.IsWindowVisible(h) or u.GetWindow(h, 4):  # 4 = GW_OWNER：只看主視窗
+            return True
+        pid = wt.DWORD()
+        u.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        proc = k.OpenProcess(0x1000, False, pid.value)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not proc:
+            return True
+        buf, size = ctypes.create_unicode_buffer(520), wt.DWORD(520)
+        ok = k.QueryFullProcessImageNameW(proc, 0, buf, ctypes.byref(size))
+        k.CloseHandle(proc)
+        if not ok or os.path.basename(buf.value).lower() != want_exe:
+            return True
+        title = ctypes.create_unicode_buffer(512)
+        u.GetWindowTextW(h, title, 512)
+        r = wt.RECT()
+        u.GetWindowRect(h, ctypes.byref(r))
+        area = (r.right - r.left) * (r.bottom - r.top)
+        if kind == "vscode" and name and name not in title.value.lower():
+            return True
+        if area > best[1]:
+            best[:] = [h, area]
+        return True
+
+    u.EnumWindows(each, 0)
+    return best[0]
+
+
+def _force_foreground(hwnd: int):
+    u, k = ctypes.windll.user32, ctypes.windll.kernel32
+    if u.IsIconic(hwnd):
+        u.ShowWindow(hwnd, 9)  # SW_RESTORE
+    fg = u.GetForegroundWindow()
+    fg_thread = u.GetWindowThreadProcessId(fg, None)
+    me = k.GetCurrentThreadId()
+    attached = fg_thread and fg_thread != me and u.AttachThreadInput(me, fg_thread, True)
+    try:
+        u.BringWindowToTop(hwnd)
+        u.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            u.AttachThreadInput(me, fg_thread, False)
+
+
+def _open_vscode_session(sid: str):
+    try:
+        os.startfile(f"vscode://anthropic.claude-code/open?session={sid}")
+    except (OSError, AttributeError):
+        pass
 
 
 def _short(name: str) -> str:
@@ -294,8 +430,14 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
             s = session_state(entries, now, mine, guess_waiting=hook_file is None)
             if s:
                 s.key = f.path
+                s.entry = str(entries[-1].get("entrypoint") or "")
+                s.cwd = str(entries[-1].get("cwd") or "")
                 # 名稱的優先順序：/rename 取的 → 桌面版側邊欄上的名稱 → 資料夾名
-                title = session_title(f.path) or desktop_titles(now).get(f.name[:-len(".jsonl")], "")
+                cli = f.name[:-len(".jsonl")]
+                title = session_title(f.path) or desktop_titles(now).get(cli, "")
+                s.link = _desktop["links"].get(cli, "")
+                if not s.link and s.entry == "claude-vscode":
+                    s.link = f"vscode:{cli}|{s.cwd}"
                 if title:
                     s.project = _short(title)
                 states.append(s)
