@@ -13,10 +13,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install pystray pillow
+      - run: pip install pystray pillow comtypes
       - name: Import every module
-        run: python -c "import i18n, quota_source, claude_state, pet, fancymenu, widget"
+        run: python -c "import i18n, quota_source, claude_state, chat_state, pet, fancymenu, widget"
       - name: Tests
         run: |
           python tests/test_basics.py
           python tests/test_pet.py
+          python tests/test_chat.py

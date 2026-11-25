@@ -27,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
+import chat_state
 import claude_state
 import fancymenu
 import i18n
@@ -53,6 +54,7 @@ REFRESH_SEC = 10
 AUTO_POKE_COOLDOWN_MIN = 12
 # 連續起算幾次視窗都沒開，就停止自動起算（避免每 12 分鐘白花一次）
 AUTO_POKE_MAX_TRIES = 2
+AUTO_POKE_MAX_AGE_MIN = 30  # 用量資料比這個舊就不自動起算
 
 # 這個顏色會被設成透明，用來裁出圓角（tkinter 沒有原生圓角視窗）
 CHROMA = "#010203"
@@ -597,12 +599,24 @@ def poke_window() -> tuple[bool, str]:
     if not cli:
         return False, t("poke.no_cli")
     env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    # 在專用的資料夾裡跑、而且不存對話紀錄：不然每戳一次，你的專案裡就多一個「hi」對話，
+    # 寵物也會把它當成你的對話，一直說「做完了」
+    cwd = claude_state.POKE_DIR
     try:
-        r = subprocess.run(
-            [os.environ.get("COMSPEC", "cmd.exe"), "/c", cli, "-p", "hi", "--model", "haiku"],
-            capture_output=True, timeout=180, env=env,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
+        os.makedirs(cwd, exist_ok=True)
+    except OSError:
+        cwd = None
+    base = [os.environ.get("COMSPEC", "cmd.exe"), "/c", cli, "-p", "hi", "--model", "haiku"]
+
+    def run(extra):
+        return subprocess.run(base + extra, capture_output=True, timeout=180, env=env, cwd=cwd,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+    try:
+        r = run(["--no-session-persistence"])
+        err = (r.stderr or b"").decode("utf-8", "ignore").lower()
+        if r.returncode != 0 and "no-session-persistence" in err:  # 舊版 CLI 沒有這個選項
+            r = run([])
     except subprocess.TimeoutExpired:
         return False, t("poke.timeout")
     except OSError as e:
@@ -1508,6 +1522,7 @@ class PetWindow(FloatWindow):
         self._told: set = set()        # 已經講過的事件，不重講
         self.last_links: list = []     # describe() 每一行對應的對話（點了可以跳過去）
         self.auto_jump = bool(st.get("auto_jump", False))  # 做完或需要回覆時自動切回那個對話
+        chat_state.enabled = bool(st.get("chat_detect", True))  # 也看桌面版的聊天模式
         self.bubble = Bubble(root, dpi)
         self.forced: str | None = None  # 右鍵選單手動指定的狀態
         self.label.bind("<Button-3>", self._context)
@@ -1804,7 +1819,8 @@ class PetWindow(FloatWindow):
         同時開好幾個對話時，以前是「最重要的狀態一變就講」，於是每個對話每結束一輪都會跳一次
         「做完了」。現在每個對話分開記：
           - 在等你、出錯了：每一次都講（同一次不重講）
-          - 做完了：只講這次至少做了 PET_DONE_MIN_SEC 的；一下子就結束的小事不吵你
+          - 做完了：只講這次至少做了 PET_DONE_MIN_SEC 的；一下子就結束的小事不吵你。
+            聊天模式另外：回完時你不在那個聊天（還沒讀），再短也講
         程式剛開時已經是「做完了」的不算（沒看到它在做）。
         """
         now = time.time()
@@ -1820,7 +1836,8 @@ class PetWindow(FloatWindow):
                 continue
             if s.kind == "done":
                 started = self._work_start.pop(s.key, None)
-                if started is None or s.since - started < PET_DONE_MIN_SEC:
+                unread_chat = s.entry == "claude-chat" and s.unread
+                if not unread_chat and (started is None or s.since - started < PET_DONE_MIN_SEC):
                     self._told.add(event)
                     continue
             elif s.kind not in ("waiting", "error"):
@@ -1917,6 +1934,11 @@ class PetWindow(FloatWindow):
         threading.Thread(target=work, daemon=True).start()
 
     # ── 音樂（自訂角色在 pet.json 設定，例如跳舞時播歌） ──
+    def set_chat_detect(self, on: bool):
+        chat_state.enabled = on
+        save_state(chat_detect=on)
+        self.say(t("pet.chat_on") if on else t("pet.chat_off"), PET_BUBBLE_MS)
+
     def set_auto_jump(self, on: bool):
         self.auto_jump = on
         save_state(auto_jump=on)
@@ -2401,6 +2423,9 @@ class App:
             return
         if not self.auto_poke or self._poking or q is None:
             return
+        # 資料太舊就不知道視窗到底有沒有在跑（例如桌面版很久沒更新它的用量紀錄），不要亂戳
+        if not q.live and q.age_min > AUTO_POKE_MAX_AGE_MIN:
+            return
         if self._last_poke and \
                 (datetime.now(timezone.utc) - self._last_poke).total_seconds() < AUTO_POKE_COOLDOWN_MIN * 60:
             return
@@ -2540,6 +2565,8 @@ class App:
                  "command": self.toggle_pet_hook},
                 {"label": t("pet.auto_jump"), "checked": self.pet.auto_jump,
                  "command": lambda: self.pet.set_auto_jump(not self.pet.auto_jump)},
+                {"label": t("pet.chat"), "checked": chat_state.enabled,
+                 "command": lambda: self.pet.set_chat_detect(not chat_state.enabled)},
             ]},
             "-",
             {"label": t("menu.help"), "command": self.show_help},

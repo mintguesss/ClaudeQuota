@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import i18n  # noqa: E402
+import claude_state  # noqa: E402
 import quota_source  # noqa: E402
 
 failed = 0
@@ -72,7 +73,7 @@ else:
     seen = {}
     real_run, real_find = subprocess.run, widget.find_claude_cli
     os.environ["ANTHROPIC_API_KEY"] = "sk-test"
-    subprocess.run = lambda args, **kw: seen.update(args=args, env=kw.get("env")) or SimpleNamespace(returncode=0)
+    subprocess.run = lambda args, **kw: seen.update(args=args, env=kw.get("env"), cwd=kw.get("cwd")) or         SimpleNamespace(returncode=0, stderr=b"")
     widget.find_claude_cli = lambda: "claude"
     try:
         widget.poke_window()
@@ -82,6 +83,8 @@ else:
     check(seen.get("env") is not None and "ANTHROPIC_API_KEY" not in seen["env"],
           "auto-start runs without ANTHROPIC_API_KEY")
     check("haiku" in seen.get("args", []), "auto-start uses the Haiku model")
+    check("--no-session-persistence" in seen.get("args", []), "auto-start leaves no session behind")
+    check(seen.get("cwd") == claude_state.POKE_DIR, "auto-start runs outside your projects")
 
 print(f"\n{'all passed' if not failed else f'{failed} failed'}")
 sys.exit(1 if failed else 0)

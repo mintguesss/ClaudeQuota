@@ -43,7 +43,7 @@ The numbers are for the account Claude Code is signed in to (the CLI and the VS 
 ```bash
 git clone https://github.com/mintguesss/ClaudeQuota.git
 cd ClaudeQuota
-pip install pystray pillow
+pip install pystray pillow comtypes
 pythonw widget.py
 ```
 
@@ -73,7 +73,8 @@ A little creature that shows what Claude Code is up to, so you can look away whi
 <img src="docs/pet-en.png" alt="Slime, ginger cat, little ghost, chick, penguin, robot, bunny, frog and bear, each working, waiting for you, done, with an error, asleep and woken up">
 
 - **Click it** and a game-style dialog says which session is doing what (by its name in the desktop app's sidebar or from `/rename`, or its folder if it has none); click the dialog to close it. It also speaks up on its own when Claude is waiting, done, or hits an error.
-- **Jump to the session**: click the speech bubble (or a line in the session list) and the desktop app or VS Code opens that session. *Advanced → Jump back to a session when it finishes or needs you* does it automatically (off by default). This works for the desktop app's Code tab and the VS Code extension; a session in a plain terminal has nothing to jump to. The first time, VS Code asks whether to let the Claude Code extension open the link: allow it and tick *don't ask again*.
+- **Desktop app chats too**: when Claude is replying in a chat (not the Code tab) the pet shows it as working, and tells you when the reply is done if you weren't looking at that chat. It reads the names of the buttons in the desktop app's window (the same information a screen reader uses: a *Stop response* button means it's replying) and the chat list the app caches on your computer (each chat's name and when it last finished, not the messages). These are the app's internal formats, so a desktop app update may break it until ClaudeQuota catches up. Turn it off under *Advanced → Also watch chats in the desktop app*.
+- **Jump to the session**: click the speech bubble (or a line in the session list) and the desktop app or VS Code opens that session. *Advanced → Jump back to a session when it finishes or needs you* does it automatically (off by default). This works for the desktop app's Code tab and chats, and the VS Code extension; a session in a plain terminal has nothing to jump to. The first time, VS Code asks whether to let the Claude Code extension open the link: allow it and tick *don't ask again*.
 - **Asleep?** Click it to wake it up for a while.
 - **Right-click the pet** to wake it up any time, set its state by hand (back to automatic whenever you like), toggle its music, resize it or hide it.
 - **Drag it** anywhere, in any mode. Off the mini bar it stays where you drop it; on the taskbar walk it carries on from there.
@@ -144,7 +145,7 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 
 顯示的是 Claude Code 登入的帳號（CLI 和 VS Code 擴充功能共用同一個）。桌面版登入別的帳號時，仍以 Claude Code 的為準。
 
-從原始碼執行：`pip install pystray pillow` 後雙擊 `啟動.vbs`（不會出現主控台視窗）。
+從原始碼執行：`pip install pystray pillow comtypes` 後雙擊 `啟動.vbs`（不會出現主控台視窗）。
 
 ### 圖示樣式
 
@@ -159,7 +160,8 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 <img src="docs/pet-zh.png" alt="史萊姆、橘貓、小幽靈、小雞、企鵝、機器人、兔子、青蛙、小熊，各自的工作中、在等你、做完了、出錯了、睡覺、被叫醒">
 
 - **點一下**會跳出遊戲風對話框，說明哪個對話在做什麼（用桌面版側邊欄上的名稱或 `/rename` 取的名稱，都沒有才用資料夾名）；再點對話框就關掉。在等你、做完、出錯時也會自己冒出來講。
-- **跳到那個對話**：點對話框（或對話清單裡的某一行），桌面版或 VS Code 就會打開那個對話。「進階設定 → Claude 做完或需要你時，自動切回那個對話」可以讓它自動切過去（預設關閉）。適用桌面版的 Code 分頁和 VS Code 擴充功能；在一般終端機裡跑的對話沒有地方可以跳。第一次跳到 VS Code 時，它會問要不要讓 Claude Code 擴充功能打開這個連結，選允許並勾「不要再問」就好。
+- **也看桌面版的聊天模式**：Claude 在聊天（不是 Code 分頁）裡回覆時，寵物一樣顯示工作中；回完時如果你沒在看那個聊天，它會告訴你。做法是讀桌面版視窗上的按鈕名稱（跟螢幕閱讀器讀的是同一份資料，有「停止回應」就是在回），以及桌面版存在你電腦裡的聊天清單（每個聊天的名稱和最後回完的時間，不讀訊息內容）。這些是桌面版內部的格式，桌面版改版可能會暫時失效。不想要可以在「進階設定 → 也看桌面版的聊天模式」關掉。
+- **跳到那個對話**：點對話框（或對話清單裡的某一行），桌面版或 VS Code 就會打開那個對話。「進階設定 → Claude 做完或需要你時，自動切回那個對話」可以讓它自動切過去（預設關閉）。適用桌面版的 Code 分頁、聊天模式和 VS Code 擴充功能；在一般終端機裡跑的對話沒有地方可以跳。第一次跳到 VS Code 時，它會問要不要讓 Claude Code 擴充功能打開這個連結，選允許並勾「不要再問」就好。
 - **睡著了？** 點它一下就會醒來陪你一陣子。
 - **在寵物身上按右鍵**：隨時叫醒、手動改變狀態（隨時可以設回自動）、音樂開關、調大小、隱藏。
 - **可以拖**，哪種模式都行：從橫條上拖下來就停在你放的地方；散步模式會從放下的地方繼續走。

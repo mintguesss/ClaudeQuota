@@ -23,6 +23,8 @@ from datetime import datetime
 from typing import Optional
 
 PROJECTS = os.path.expanduser("~/.claude/projects")
+# ClaudeQuota「起算 5 小時視窗」時 claude -p 在這裡跑；這裡的對話不是你的，不看
+POKE_DIR = os.path.join(os.environ.get("TEMP") or os.path.expanduser("~"), "claudequota-poke")
 
 ACTIVE_SEC = 15 * 60    # 這麼久沒動的對話就不看了
 DONE_SEC = 3 * 60       # 做完之後開心多久
@@ -48,8 +50,9 @@ class State:
     others: int = 0               # 另外還有幾個對話在跑
     key: str = ""                 # 哪個對話（紀錄檔路徑），用來分辨同一個對話的同一次完成
     link: str = ""                # 點名稱時要打開哪裡（見 open_session）；終端機裡的對話沒有
-    entry: str = ""               # 對話從哪裡開的：claude-desktop / claude-vscode / cli …
+    entry: str = ""               # 對話從哪裡開的：claude-desktop / claude-vscode / cli …；聊天模式是 claude-chat
     cwd: str = ""
+    unread: bool = False          # 聊天回完了但你還沒看（回完時你不在那個聊天）
 
 
 def _ts(entry: dict) -> Optional[float]:
@@ -235,6 +238,7 @@ def open_session(link: str) -> bool:
     """打開這個對話。link 有兩種：
 
     - local_…：桌面版 Code 分頁的對話，用桌面版註冊的 claude:// 連結
+    - chat:<對話 id>：桌面版聊天模式的對話，claude://claude.ai/chat/<id>
     - vscode:<對話 id>|<資料夾>：VS Code 擴充功能裡的對話。VS Code 會把連結交給最後用過的那個視窗，
       所以先用 vscode://file 叫出那個資料夾的視窗（已經開著就是切過去），再用擴充功能自己的
       vscode://anthropic.claude-code/open?session= 打開對話
@@ -245,12 +249,15 @@ def open_session(link: str) -> bool:
     try:
         # Windows 只讓「剛被點過的程式」把別的視窗拉到前面。點寵物對話框的是我們，
         # 這裡把這個權利讓給任何程式，桌面版和 VS Code 才能自己跳到最前面，不會只在工作列閃
-        ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
+        _user32().AllowSetForegroundWindow(-1)  # ASFW_ANY
     except (AttributeError, OSError):
         pass
     try:
         if _LOCAL_ID.match(link):
             os.startfile(f"claude://code/continue?session={link}&source=desktop_action")
+            return True
+        if link.startswith("chat:") and _UUID.match(link[len("chat:"):]):
+            os.startfile(f"claude://claude.ai/chat/{link[len('chat:'):]}")
             return True
         if link.startswith("vscode:"):
             sid, _, folder = link[len("vscode:"):].partition("|")
@@ -289,10 +296,27 @@ def bring_forward(kind: str, folder: str = "", delay: float = 2.0):
     threading.Thread(target=work, daemon=True).start()
 
 
+_dlls: dict = {}
+
+
+def _user32():
+    """自己的一份 user32。不用共用的 ctypes.windll.user32：程式裡別的套件會改它函式的參數型別
+    （例如 GetWindowRect 要別的 RECT），跟這裡傳的對不上，找視窗就整個失敗。"""
+    if "u" not in _dlls:
+        _dlls["u"] = ctypes.WinDLL("user32")
+    return _dlls["u"]
+
+
+def _kernel32():
+    if "k" not in _dlls:
+        _dlls["k"] = ctypes.WinDLL("kernel32")
+    return _dlls["k"]
+
+
 def _find_window(kind: str, folder: str) -> int:
     import ctypes.wintypes as wt
 
-    u, k = ctypes.windll.user32, ctypes.windll.kernel32
+    u, k = _user32(), _kernel32()
     want_exe = "claude.exe" if kind == "desktop" else "code.exe"
     name = os.path.basename(folder.rstrip("\\/")).lower()
     best = [0, 0]
@@ -327,7 +351,7 @@ def _find_window(kind: str, folder: str) -> int:
 
 
 def _force_foreground(hwnd: int):
-    u, k = ctypes.windll.user32, ctypes.windll.kernel32
+    u, k = _user32(), _kernel32()
     if u.IsIconic(hwnd):
         u.ShowWindow(hwnd, 9)  # SW_RESTORE
     fg = u.GetForegroundWindow()
@@ -438,7 +462,7 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
     except OSError:
         projects = []
     for proj in projects:
-        if not proj.is_dir():
+        if not proj.is_dir() or proj.name.lower().endswith("claudequota-poke"):
             continue
         try:
             files = list(os.scandir(proj.path))
@@ -478,6 +502,7 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
                 if title:
                     s.project = _short(title)
                 states.append(s)
+    states += chat_states(now)
     # 不再活躍的檔案不用留在快取裡
     for cache in (_cache, _titles, _modes):
         for path in [p for p in cache if not os.path.exists(p)]:
@@ -493,3 +518,17 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
 
 
 last_sessions: list[State] = []
+
+
+def chat_states(now: float) -> list[State]:
+    """桌面版聊天模式的對話（見 chat_state.py）。讀不到就當沒有。"""
+    try:
+        import chat_state
+        found = chat_state.sessions(now)
+    except Exception:
+        return []
+    out = []
+    for c in found:
+        out.append(State(c["kind"], _short(c["name"]), c["since"], key="chat:" + (c["name"] or c["id"]),
+                         link=("chat:" + c["id"]) if c["id"] else "", entry="claude-chat", unread=c["unread"]))
+    return out

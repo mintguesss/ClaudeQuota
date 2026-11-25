@@ -16,10 +16,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install pyinstaller pystray pillow
+      - run: pip install pyinstaller pystray pillow comtypes
+      # 先產生 UI Automation 的 comtypes 介面，打包時一起包進去（聊天模式偵測用）
+      - run: python -c "import comtypes.client as c; c.GetModule('UIAutomationCore.dll')"
       - run: python tests/test_basics.py
       - name: Build
-        run: pyinstaller --noconfirm --onefile --windowed --name ClaudeQuota --icon "${{ github.workspace }}\assets\icon.ico" widget.py
+        run: pyinstaller --noconfirm --onefile --windowed --name ClaudeQuota --collect-submodules comtypes.gen --icon "${{ github.workspace }}\assets\icon.ico" widget.py
       - name: Checksum
         shell: pwsh
         run: (Get-FileHash dist\ClaudeQuota.exe -Algorithm SHA256).Hash + "  ClaudeQuota.exe" | Out-File -Encoding ascii dist\ClaudeQuota.exe.sha256

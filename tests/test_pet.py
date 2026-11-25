@@ -11,6 +11,9 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import claude_state as cs  # noqa: E402
+import chat_state  # noqa: E402
+
+chat_state.enabled = False  # 這裡只測 Claude Code 的紀錄，不看這台電腦真的聊天
 
 failed = 0
 

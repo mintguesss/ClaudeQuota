@@ -69,6 +69,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "pet.auto_jump": {"zh": "Claude 做完或需要你時，自動切回那個對話", "en": "Jump back to a session when it finishes or needs you"},
     "pet.auto_jump_on": {"zh": "好！之後 Claude 做完或需要你回覆時，我會直接把那個對話叫出來（桌面版的 Code 分頁或 VS Code）",
                          "en": "Got it! When Claude finishes or needs you, I'll bring that session up (desktop app Code tab or VS Code)"},
+    "pet.chat": {"zh": "也看桌面版的聊天模式", "en": "Also watch chats in the desktop app"},
+    "pet.chat_on": {"zh": "好！桌面版聊天模式在回、回完了，我也會告訴你",
+                    "en": "Got it! I'll also tell you when a desktop app chat is replying or done"},
+    "pet.chat_off": {"zh": "不看聊天模式了，只看 Claude Code", "en": "Only watching Claude Code now, not chats"},
     "pet.auto_jump_off": {"zh": "不自動切換了，點我的對話框還是可以跳過去", "en": "No more auto-jumping. You can still click my speech bubble to jump"},
     "pet.menu.state": {"zh": "改變狀態", "en": "Change state"},
     "pet.state.auto": {"zh": "自動（跟著 Claude）", "en": "Automatic (follow Claude)"},
@@ -298,7 +302,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "做完了（冒星星）、出錯了（頭上有烏雲）、沒事時睡覺。CLI、VS Code、桌面版的 Code 分頁都看得到\n"
             "• 點一下：跳出對話框說明哪個專案在做什麼（同時有好幾個對話時每個都列出來），再點對話框就關掉。"
             "在等你、做完、出錯時會自己冒出來講\n"
-            "• 點對話框（或清單裡的某一行）就會打開那個對話（桌面版的 Code 分頁或 VS Code）；"
+            "• 點對話框（或清單裡的某一行）就會打開那個對話（桌面版的 Code 分頁、聊天模式或 VS Code）；"
             "「進階設定」可以讓它做完或需要你時自動切過去。第一次跳到 VS Code 時它會問要不要允許，"
             "選允許並勾「不要再問」\n"
             "• 睡著時點一下會叫醒它；哪種模式都可以拖到別的地方\n"
@@ -354,7 +358,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "the desktop app's Code tab\n"
             "• Click it for a dialog saying which project is doing what (every session, when several are running); click the dialog to close it. It speaks "
             "up by itself when Claude is waiting, done or hits an error\n"
-            "• Click the speech bubble (or a line in the list) to open that session (desktop app Code tab or VS Code); "
+            "• Click the speech bubble (or a line in the list) to open that session (desktop app Code tab, chats, or VS Code); "
             "under Advanced it can jump there by itself when Claude finishes or needs you. The first time, VS Code "
             "asks whether to allow the link: allow it and tick don't ask again\n"
             "• Click it while it sleeps to wake it up; drag it anywhere in any mode\n"
