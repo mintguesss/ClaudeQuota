@@ -27,12 +27,12 @@ for lang in ("zh", "en"):
     i18n.set_lang(lang)
     check(i18n.t("left.hm", h=2, m=5) != "", f"formatting works in {lang}")
 
-check(quota_source.ALLOW_REFRESH is False, "token refresh is off by default")
+check(quota_source.ALLOW_REFRESH is True, "token refresh is on by default")
 
 with open(os.path.join(os.path.dirname(__file__), "..", "widget.py"), encoding="utf-8") as f:
     src = f.read()
 check('st.get("auto_poke", False)' in src, "auto-start after reset is off by default")
-check('st.get("token_refresh", False)' in src, "token refresh setting defaults to off")
+check('st.get("token_refresh", True)' in src, "token refresh setting defaults to on")
 
 # Auto-start must bill the subscription: with ANTHROPIC_API_KEY in the environment,
 # `claude -p` uses the API key instead, so the 5-hour window never starts.

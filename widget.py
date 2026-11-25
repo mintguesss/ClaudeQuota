@@ -2088,11 +2088,11 @@ class App:
         self._hook = None  # 殼層事件 hook，要留著參照不然會被回收
 
         st = load_state()
-        # 兩個會動到額度或憑證的功能都預設關閉，使用者在系統列選單自己開
+        # 自動起算會花額度，預設關閉；換發 token 不開的話一定會過期，預設開啟
         self.auto_poke = bool(st.get("auto_poke", False))
         fancymenu.load_custom_themes(THEMES_FILE)
         fancymenu.set_theme(st.get("theme", "paper"))
-        quota_source.ALLOW_REFRESH = bool(st.get("token_refresh", False))
+        quota_source.ALLOW_REFRESH = bool(st.get("token_refresh", True))
         i18n.set_lang(st.get("lang", "auto"))
         style = st.get("tray_style", "burst")
         self.tray_style = style if style in _TRAY_FN else "burst"

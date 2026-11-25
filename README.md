@@ -84,20 +84,20 @@ A little creature that shows what Claude Code is up to, so you can look away whi
 - **Watch something while you wait**: *Watch videos while Claude works* opens YouTube Shorts, Instagram Reels, TikTok, YouTube, Netflix, Disney+, Twitch, Bilibili or Facebook Reels, plus any site or app link you add (`spotify:` works too). For the next two hours, when Claude needs your permission, finishes, or hits an error, you get a Windows notification, even if the video is full screen.
 - **Waiting for permission** is a guess by default: a tool call that needs approval with no result for 20 seconds. Long-running commands can fool it. *Pet: detect permission prompts exactly* under **Advanced** adds a Claude Code `Notification` hook to `~/.claude/settings.json` that makes it exact; it asks first, keeps a backup, and removing it takes out only that one entry.
 
-### Two optional settings (off by default)
+### Two settings that touch your quota or sign-in
 
-| Setting | What it does | Cost |
-| --- | --- | --- |
-| **Auto-start after reset** | Starts a new 5-hour window as soon as the last one ends, so your reset time comes earlier | Under **1% of the 5-hour limit** each time (one `claude -p hi` on Haiku, measured on a Pro plan) |
-| **Refresh expired token** | Keeps live numbers working when Claude Code hasn't run for a while | May make a running Claude Code ask you to sign in again. Off, you just see the desktop app's cache until you open Claude Code |
+| Setting | Default | What it does | Cost |
+| --- | --- | --- | --- |
+| **Auto-start after reset** | Off | Starts a new 5-hour window as soon as the last one ends, so your reset time comes earlier | Under **1% of the 5-hour limit** each time (one `claude -p hi` on Haiku, measured on a Pro plan) |
+| **Refresh expired token** | On | Keeps live numbers working when Claude Code hasn't run for a while. Without it the token always expires sooner or later | It only renews a token that has already expired, so this rarely matters, but a Claude Code left open may then ask you to sign in again. Turn it off under **Advanced** |
 
-The app explains each one and asks before turning it on.
+The app explains auto-start and asks before turning it on.
 
 ## Data and privacy
 
-- **Claude Code:** reads the OAuth token from `~/.claude/.credentials.json` to ask for *your own* account's usage. It also reads timestamps (not content) from Claude Code's session logs to work out when the window started. With *Refresh expired token* on, it also writes the renewed token back to the same file.
+- **Claude Code:** reads the OAuth token from `~/.claude/.credentials.json` to ask for *your own* account's usage. It also reads timestamps (not content) from Claude Code's session logs to work out when the window started. When it renews an expired token (*Refresh expired token*, on by default), it writes the new one back to the same file.
 - **Claude desktop app:** reads its locally cached usage history.
-- **Network:** only Anthropic's endpoints, for the usage request and, if enabled, the token refresh. No accounts, conversations, tokens or usage data are sent anywhere else. No telemetry.
+- **Network:** only Anthropic's endpoints, for the usage request and the token refresh. No accounts, conversations, tokens or usage data are sent anywhere else. No telemetry.
 - **Settings** are stored in `%APPDATA%\ClaudeQuota` (exe) or next to `widget.py` (source).
 
 ## Disclaimer
@@ -171,20 +171,20 @@ Interface idea inspired by [GlassQuota](https://github.com/chen10191200-hue/Glas
 - **等的時候看影片**：「等 Claude 時看短影片」可以打開 YouTube Shorts、Instagram Reels、TikTok、YouTube、Netflix、Disney+、Twitch、Bilibili、Facebook Reels，也能加你自己常用的網站或 app 連結（例如 `spotify:`）。之後兩小時內 Claude 需要你允許、做完或出錯，會發 Windows 通知叫你，影片全螢幕也看得到。
 - 「**在等你允許**」預設是用猜的：需要允許的工具送出 20 秒還沒結果就當作在等你，跑很久的指令會猜錯。「進階設定」裡可以裝 Claude Code 的 `Notification` hook 讓它變準：會先說明並詢問、改之前留備份，移除時只拿掉那一條。
 
-### 兩個選用設定（預設關閉）
+### 兩個會動到額度或登入的設定
 
-| 設定 | 作用 | 代價 |
-| --- | --- | --- |
-| **重置後自動起算** | 上一個 5 小時視窗一結束就開新的，重置時間會提早 | 每次花**不到 5 小時額度的 1%**（用 Haiku 跑一次 `claude -p hi`，在 Pro 方案實測） |
-| **自動換發過期 token** | Claude Code 很久沒開時也能看到即時數字 | 正在執行的 Claude Code 可能會要你重新登入。不開的話只會改顯示桌面版快取，開一次 Claude Code 就恢復 |
+| 設定 | 預設 | 作用 | 代價 |
+| --- | --- | --- | --- |
+| **重置後自動起算** | 關閉 | 上一個 5 小時視窗一結束就開新的，重置時間會提早 | 每次花**不到 5 小時額度的 1%**（用 Haiku 跑一次 `claude -p hi`，在 Pro 方案實測） |
+| **自動換發過期 token** | 開啟 | Claude Code 很久沒開時也能看到即時數字；不開的話 token 遲早會過期 | 只換已經過期的 token，所以很少碰到；但開著沒在用的 Claude Code 之後可能會要你重新登入。可在「進階設定」關掉 |
 
-開啟前程式會先說明並詢問；系統列選單的「**使用說明**」也會逐項解釋每個按鈕和功能。
+開啟自動起算前程式會先說明並詢問；系統列選單的「**使用說明**」也會逐項解釋每個按鈕和功能。
 
 ### 資料與隱私
 
-- **Claude Code**：讀取 `~/.claude/.credentials.json` 的 OAuth token，只查詢自己帳號的用量；另讀取對話紀錄的時間戳（不讀內容）推算視窗起點。開啟「自動換發過期 token」時，會把新 token 寫回同一個檔案。
+- **Claude Code**：讀取 `~/.claude/.credentials.json` 的 OAuth token，只查詢自己帳號的用量；另讀取對話紀錄的時間戳（不讀內容）推算視窗起點。換發過期 token 時（預設開啟），會把新 token 寫回同一個檔案。
 - **Claude 桌面版**：讀取其本機快取的用量紀錄。
-- **網路**：只連 Anthropic 官方端點（查詢用量，以及開啟時的 token 換發）。不上傳帳號、對話、token 或用量資料，沒有遙測。
+- **網路**：只連 Anthropic 官方端點（查詢用量，以及 token 換發）。不上傳帳號、對話、token 或用量資料，沒有遙測。
 - **設定檔**存在 `%APPDATA%\ClaudeQuota`（exe）或 `widget.py` 旁邊（原始碼）。
 
 ### 說明

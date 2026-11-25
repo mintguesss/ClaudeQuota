@@ -149,11 +149,12 @@ TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 REFRESH_RETRY = 900         # 換發失敗後隔多久再試（秒）
 
-# 自己換發 token 預設關閉，由使用者在系統列選單開啟（widget 會設這個旗標）。
-# 換發會讓舊的 refresh token 失效：Claude Code 若正在執行、記憶體裡拿著舊的，
-# 它下次換發就會失敗而要求重新登入。而且這是借用 Claude Code 的 OAuth client，
-# 不是公開給第三方的介面。所以只在使用者明確選擇後才做。
-ALLOW_REFRESH = False
+# 自己換發 token 預設開啟，使用者可以在系統列選單關掉（widget 會設這個旗標）。
+# 不換的話，只用桌面版、很久沒開 CLI 的人 token 一定會過期，即時數字就沒了。
+# 代價：換發會讓舊的 refresh token 失效，Claude Code 若正開著、記憶體裡拿著舊的，
+# 它下次換發可能失敗而要求重新登入。只有憑證檔裡的 token 已經過期才會換，
+# 而 Claude Code 有在用的話它自己早就換好了，所以實際上很少碰到。
+ALLOW_REFRESH = True
 
 _refresh_lock = threading.Lock()
 _refresh_muted_until = 0.0
