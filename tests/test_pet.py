@@ -53,6 +53,21 @@ check(kind(assistant(60, "tool_use", ["Read"])) == "working", "a slow read tool 
 check(kind(assistant(60, "tool_use", ["Bash"])) == "waiting", "a Bash call with no result for a minute looks like waiting")
 check(kind(assistant(60, "tool_use", ["Bash"]), guess_waiting=False) == "working",
       "with the hook installed, it doesn't guess waiting")
+check(kind(assistant(60, "tool_use", ["Bash"]), mode="auto") == "working",
+      "in auto mode nothing asks for permission, so a slow Bash call is just working")
+check(kind(assistant(60, "tool_use", ["Bash"]), mode="bypassPermissions") == "working",
+      "with permissions bypassed, a slow Bash call is just working")
+check(kind(assistant(60, "tool_use", ["Edit"]), mode="acceptEdits") == "working",
+      "acceptEdits doesn't ask before an edit")
+check(kind(assistant(60, "tool_use", ["Bash"]), mode="acceptEdits") == "waiting",
+      "acceptEdits still asks before a Bash call")
+with tempfile.TemporaryDirectory() as d:
+    p = os.path.join(d, "s.jsonl")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(dict(user(90, "go"), permissionMode="auto")) + "\n")
+        fh.write(json.dumps(assistant(60, "tool_use", ["Bash"])) + "\n")
+    check(cs.permission_mode(p, [assistant(60, "tool_use", ["Bash"])]) == "auto",
+          "the permission mode is found further back when the tail doesn't have it")
 check(kind(assistant(30, "end_turn")) == "done", "an answer that just finished is done")
 check(kind(assistant(600, "end_turn")) == "idle", "an answer from ten minutes ago is idle")
 check(kind(assistant(10, None, error=True)) == "error", "an API error is an error")

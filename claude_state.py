@@ -86,6 +86,31 @@ def _tail_entries(path: str) -> list[dict]:
     return out
 
 
+# 這些權限模式下工具不會停下來問你，工具跑得久也不是在等你按允許
+NO_PROMPT_MODES = ("auto", "bypassPermissions", "dontAsk")
+EDIT_TOOLS = ("Edit", "MultiEdit", "Write", "NotebookEdit")  # acceptEdits 模式下不會問的工具
+_PERM_RE = re.compile(rb'"permissionMode"\s*:\s*"([A-Za-z]+)"')
+_modes: dict[str, str] = {}  # 紀錄檔路徑 → 最近一次送出時的權限模式
+
+
+def permission_mode(path: str, entries: list[dict]) -> str:
+    """這個對話目前的權限模式。每次送出提問時紀錄檔都會記一筆；結尾那段沒有就沿用上次看到的，
+    第一次看到這個檔案才整個掃一遍。"""
+    for e in reversed(entries):
+        mode = e.get("permissionMode")
+        if isinstance(mode, str) and mode:
+            _modes[path] = mode
+            return mode
+    if path not in _modes:
+        try:
+            with open(path, "rb") as f:
+                found = _PERM_RE.findall(f.read())
+            _modes[path] = found[-1].decode() if found else ""
+        except OSError:
+            _modes[path] = ""
+    return _modes[path]
+
+
 _titles: dict[str, tuple[int, str]] = {}  # 紀錄檔路徑 → (讀到第幾個 byte, 名稱)
 
 
@@ -336,8 +361,12 @@ def _content(entry: dict) -> list:
 
 
 def session_state(entries: list[dict], now: float, hook: Optional[dict] = None,
-                  guess_waiting: bool = True) -> Optional[State]:
-    """從一個對話的最後幾筆紀錄判斷它現在的狀態。看不出來就 None。"""
+                  guess_waiting: bool = True, mode: str = "") -> Optional[State]:
+    """從一個對話的最後幾筆紀錄判斷它現在的狀態。看不出來就 None。
+
+    mode 是這個對話的權限模式：auto、bypassPermissions 這些不會問你的模式下，工具跑得久只是在跑，
+    不猜成在等你按允許（acceptEdits 只對改檔案的工具這樣）。
+    """
     if not entries:
         return None
     last = entries[-1]
@@ -357,7 +386,12 @@ def session_state(entries: list[dict], now: float, hook: Optional[dict] = None,
         reason = (last.get("message") or {}).get("stop_reason")
         if reason == "tool_use":
             tools = [b.get("name", "") for b in _content(last) if b.get("type") == "tool_use"]
-            asks = any(n.startswith(ASKS_PERMISSION) for n in tools)
+            if mode in NO_PROMPT_MODES:
+                asks = False
+            elif mode == "acceptEdits":
+                asks = any(n.startswith(ASKS_PERMISSION) and n not in EDIT_TOOLS for n in tools)
+            else:
+                asks = any(n.startswith(ASKS_PERMISSION) for n in tools)
             if guess_waiting and asks and WAIT_GUESS_SEC < age < THINK_SEC:
                 return State("waiting", project, t + WAIT_GUESS_SEC, guessed=True)
             return State("working", project, t) if age < THINK_SEC else State("idle", project, t)
@@ -422,19 +456,22 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
             key = (st.st_mtime, st.st_size)
             cached = _cache.get(f.path)
             if cached and cached[0] == key:
-                entries = cached[1]
+                entries, mode = cached[1], cached[2]
             else:
-                entries = _tail_entries(f.path)[-8:]
-                _cache[f.path] = (key, entries)
+                tail = _tail_entries(f.path)
+                entries, mode = tail[-8:], permission_mode(f.path, tail)
+                _cache[f.path] = (key, entries, mode)
             mine = hook if hook and hook["transcript"] == os.path.normcase(os.path.abspath(f.path)) else None
-            s = session_state(entries, now, mine, guess_waiting=hook_file is None)
+            s = session_state(entries, now, mine, guess_waiting=hook_file is None, mode=mode)
             if s:
                 s.key = f.path
                 s.entry = str(entries[-1].get("entrypoint") or "")
                 s.cwd = str(entries[-1].get("cwd") or "")
                 # 名稱的優先順序：/rename 取的 → 桌面版側邊欄上的名稱 → 資料夾名
                 cli = f.name[:-len(".jsonl")]
-                title = session_title(f.path) or desktop_titles(now).get(cli, "")
+                # 桌面版的資料每次都要掃：跳轉連結也是從那裡來的，對話自己有名稱時也一樣需要
+                desktop = desktop_titles(now)
+                title = session_title(f.path) or desktop.get(cli, "")
                 s.link = _desktop["links"].get(cli, "")
                 if not s.link and s.entry == "claude-vscode":
                     s.link = f"vscode:{cli}|{s.cwd}"
@@ -442,7 +479,7 @@ def current(hook_file: Optional[str] = None, now: Optional[float] = None) -> Sta
                     s.project = _short(title)
                 states.append(s)
     # 不再活躍的檔案不用留在快取裡
-    for cache in (_cache, _titles):
+    for cache in (_cache, _titles, _modes):
         for path in [p for p in cache if not os.path.exists(p)]:
             del cache[path]
     busy = sorted((s for s in states if s.kind != "idle"), key=lambda s: (PRIORITY[s.kind], s.since), reverse=True)
